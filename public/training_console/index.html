@@ -1,0 +1,248 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Training Console</title>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&display=swap');
+        body {
+            background-color: #0a0a0f;
+            color: #e6edf3;
+            font-family: 'JetBrains Mono', monospace;
+            margin: 0;
+            padding: 20px;
+            font-size: 14px;
+        }
+        .container {
+            border: 1px solid #30363d;
+            border-radius: 8px;
+            overflow: hidden;
+            background: #0d1117;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.3);
+            display: flex;
+            flex-direction: column;
+        }
+        .header {
+            padding: 15px 20px;
+            border-bottom: 1px solid #30363d;
+            background: #161b22;
+        }
+        .title-row {
+            display: flex;
+            justify-content: space-between;
+            font-weight: bold;
+            margin-bottom: 8px;
+        }
+        .arch-row {
+            color: #8b949e;
+            font-size: 12px;
+        }
+        .best-params {
+            color: #10b981;
+            font-size: 12px;
+            margin-top: 4px;
+        }
+        .charts-row {
+            display: flex;
+            border-bottom: 1px solid #30363d;
+        }
+        .chart-box {
+            flex: 1;
+            padding: 15px;
+            height: 220px;
+        }
+        .chart-box:first-child { border-right: 1px solid #30363d; }
+        
+        .section-title {
+            color: #8b949e;
+            font-size: 12px;
+            padding: 15px 20px 5px;
+            text-transform: uppercase;
+        }
+        
+        .metrics-table-wrapper {
+            padding: 0 20px;
+            max-height: 150px;
+            overflow-y: auto;
+            border-bottom: 1px solid #30363d;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 13px;
+        }
+        th, td {
+            text-align: left;
+            padding: 6px;
+            border-bottom: 1px solid #21262d;
+        }
+        th { color: #8b949e; position: sticky; top: 0; background: #0d1117; }
+        tr:last-child { color: #10b981; font-weight: bold; }
+        
+        .groq-commentary {
+            padding: 15px 20px;
+            border-bottom: 1px solid #30363d;
+            font-size: 14px;
+            color: #f59e0b;
+            background: rgba(245, 158, 11, 0.05);
+            transition: opacity 0.5s;
+        }
+        .groq-title {
+            font-weight: bold;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 8px;
+            font-size: 12px;
+        }
+        .raw-log {
+            padding: 15px 20px;
+            height: 120px;
+            overflow-y: auto;
+            color: #8b949e;
+            font-size: 12px;
+            background: #0a0a0f;
+            line-height: 1.5;
+        }
+    </style>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <div class="title-row">
+                <span style="color:#6366f1">LIVE TRAINING</span>
+                <span id="epoch-counter">Epoch 0 / 0</span>
+            </div>
+            <div class="arch-row" id="arch-desc">Architecture: ...</div>
+            <div class="best-params" id="best-params-desc">Config: ...</div>
+        </div>
+        
+        <div class="charts-row">
+            <div class="chart-box">
+                <canvas id="lossChart"></canvas>
+            </div>
+            <div class="chart-box">
+                <canvas id="accChart"></canvas>
+            </div>
+        </div>
+
+        <div class="section-title">EPOCH METRICS</div>
+        <div class="metrics-table-wrapper" id="metrics-scroll">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Epoch</th><th>Loss</th><th>Val Loss</th><th>Acc</th><th>Val Acc</th>
+                    </tr>
+                </thead>
+                <tbody id="metrics-body">
+                </tbody>
+            </table>
+        </div>
+
+        <div class="groq-commentary">
+            <div class="groq-title">🧠 GROQ LIVE OBSERVATION</div>
+            <div id="groq-text">Awaiting initial epochs for analysis...</div>
+        </div>
+
+        <div class="section-title">SUBPROCESS LOG</div>
+        <div class="raw-log" id="log-box"></div>
+    </div>
+
+    <script>
+        Chart.defaults.color = '#8b949e';
+        Chart.defaults.font.family = "'JetBrains Mono', monospace";
+        
+        const lossCtx = document.getElementById('lossChart').getContext('2d');
+        const accCtx = document.getElementById('accChart').getContext('2d');
+        
+        const chartConfig = (title, label1, label2, color1, color2) => ({
+            type: 'line',
+            data: { labels: [], datasets: [
+                { label: label1, borderColor: color1, data: [], tension: 0.3, borderWidth: 2 },
+                { label: label2, borderColor: color2, borderDash: [5, 5], data: [], tension: 0.3, borderWidth: 2 }
+            ]},
+            options: {
+                responsive: true, maintainAspectRatio: false,
+                plugins: { title: { display: true, text: title, color: '#e6edf3' }, legend: { position: 'bottom', labels: { boxWidth: 12 } } },
+                scales: {
+                    x: { grid: { color: '#30363d' } },
+                    y: { grid: { color: '#30363d' } }
+                },
+                animation: { duration: 0 }
+            }
+        });
+
+        const lossChart = new Chart(lossCtx, chartConfig('Loss Curve', 'Train', 'Val', '#ec4899', '#f472b6'));
+        const accChart = new Chart(accCtx, chartConfig('Accuracy Curve', 'Train', 'Val', '#10b981', '#34d399'));
+
+        let lastMetricCount = 0;
+
+        const updateUI = async () => {
+            try {
+                const res = await fetch('/training-status');
+                if (!res.ok) return;
+                const state = await res.json();
+                
+                document.getElementById('epoch-counter').innerText = `Epoch ${state.current_epoch} / ${state.total_epochs}`;
+                document.getElementById('arch-desc').innerText = `Architecture: ${state.architecture || "Unknown"}`;
+                
+                if (state.best_params && Object.keys(state.best_params).length > 0) {
+                    const bpStrings = Object.entries(state.best_params).map(([k,v]) => `${k}=${typeof v === 'number' ? v.toFixed(4).replace(/\.0000$/, '') : v}`);
+                    document.getElementById('best-params-desc').innerText = `Config: ${bpStrings.join(', ')}`;
+                }
+
+                if (state.groq_commentary) {
+                    document.getElementById('groq-text').innerText = state.groq_commentary;
+                }
+
+                if (state.metrics && state.metrics.length > lastMetricCount) {
+                    lastMetricCount = state.metrics.length;
+                    
+                    // Update Charts
+                    lossChart.data.labels = state.metrics.map(m => m.epoch);
+                    lossChart.data.datasets[0].data = state.metrics.map(m => m.loss);
+                    lossChart.data.datasets[1].data = state.metrics.map(m => m.val_loss);
+                    lossChart.update();
+                    
+                    accChart.data.labels = state.metrics.map(m => m.epoch);
+                    accChart.data.datasets[0].data = state.metrics.map(m => m.acc || m.loss); // fallback if no acc
+                    accChart.data.datasets[1].data = state.metrics.map(m => m.val_acc || m.val_loss);
+                    accChart.update();
+                    
+                    // Update Table
+                    let tableHTML = '';
+                    state.metrics.forEach(m => {
+                        tableHTML += `<tr>
+                            <td>${m.epoch}</td>
+                            <td>${m.loss?.toFixed(4) || '-'}</td>
+                            <td>${m.val_loss?.toFixed(4) || '-'}</td>
+                            <td>${m.acc?.toFixed(4) || '-'}</td>
+                            <td>${m.val_acc?.toFixed(4) || '-'}</td>
+                        </tr>`;
+                    });
+                    const tbody = document.getElementById('metrics-body');
+                    tbody.innerHTML = tableHTML;
+                    const scrollDiv = document.getElementById('metrics-scroll');
+                    scrollDiv.scrollTop = scrollDiv.scrollHeight;
+                }
+
+                // Logs
+                const logBox = document.getElementById('log-box');
+                if (state.logs && state.logs.length > 0) {
+                    const curLog = state.logs.map(l => `> ${l}`).join('<br>');
+                    if (logBox.innerHTML !== curLog) {
+                        logBox.innerHTML = curLog;
+                        logBox.scrollTop = logBox.scrollHeight;
+                    }
+                }
+            } catch (e) {
+                console.error("Poll error", e);
+            }
+        };
+        setInterval(updateUI, 800);
+        updateUI();
+    </script>
+</body>
+</html>

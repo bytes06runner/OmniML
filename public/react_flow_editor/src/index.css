@@ -1,0 +1,66 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+*, *::before, *::after {
+  box-sizing: border-box;
+}
+
+html, body, #root {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  background: #0a0a0f;
+}
+
+.react-flow-wrapper {
+  width: 100%;
+  height: 100vh;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+.react-flow__node {
+  border-radius: 8px;
+  box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
+}
+
+.react-flow__node-customNode {
+  width: 180px;
+  background: #1e1e24;
+  color: white;
+  border: 1px solid #334155;
+}
+
+.react-flow__node:hover .node-delete-btn {
+  opacity: 1 !important;
+}
+
+/* Make handles easier to grab */
+.react-flow__handle {
+  width: 14px !important;
+  height: 14px !important;
+  border-radius: 50% !important;
+}
+
+.react-flow__handle:hover {
+  transform: translateX(-50%) scale(1.4) !important;
+  transition: transform 0.1s ease !important;
+}
+
+/* Animated edges */
+.react-flow__edge-path {
+  stroke-width: 2 !important;
+}
+
+@keyframes shake {
+  0%, 100% { transform: translateX(0); }
+  20%       { transform: translateX(-6px); }
+  40%       { transform: translateX(6px); }
+  60%       { transform: translateX(-4px); }
+  80%       { transform: translateX(4px); }
+}

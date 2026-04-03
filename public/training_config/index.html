@@ -1,0 +1,373 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>OmniML — Training Config</title>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+    :root{
+      --bg:#0a0a0f;--surface:#0d1117;--surface2:#111827;
+      --border:#21262d;--border2:#30363d;
+      --text:#e6edf3;--muted:#8b949e;
+      --indigo:#6366f1;--emerald:#10b981;--amber:#f59e0b;--rose:#ef4444;--violet:#8b5cf6;
+    }
+    html,body{height:100%;background:var(--bg);color:var(--text);font-family:'Inter',sans-serif;overflow-y:auto}
+    body{padding:0 0 40px 0}
+
+    /* Header */
+    .header{height:52px;display:flex;align-items:center;gap:12px;padding:0 24px;
+      background:rgba(13,17,23,.9);border-bottom:1px solid var(--border);
+      backdrop-filter:blur(12px);position:sticky;top:0;z-index:20}
+    .header h1{font-family:'JetBrains Mono';font-size:14px;font-weight:700;color:var(--indigo)}
+    .header .sub{font-size:12px;color:var(--muted)}
+
+    /* Main */
+    .main{max-width:960px;margin:0 auto;padding:28px 24px;display:flex;flex-direction:column;gap:20px}
+
+    /* Section */
+    .section{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:20px}
+    .section-title{font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);margin-bottom:16px;display:flex;align-items:center;gap:8px}
+    .dot{width:6px;height:6px;border-radius:50%;display:inline-block}
+
+    /* Grid for params */
+    .param-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+    .param-grid.three{grid-template-columns:1fr 1fr 1fr}
+
+    /* Param block */
+    .param{display:flex;flex-direction:column;gap:8px}
+    .param-header{display:flex;justify-content:space-between;align-items:center}
+    .param-label{font-size:12px;font-weight:600;color:var(--text)}
+    .param-val{font-family:'JetBrains Mono';font-size:13px;font-weight:700;color:var(--indigo);background:rgba(99,102,241,.12);border:1px solid rgba(99,102,241,.25);border-radius:6px;padding:2px 10px;min-width:64px;text-align:center}
+    .param-desc{font-size:10px;color:var(--muted);line-height:1.5}
+    input[type=range]{width:100%;accent-color:var(--indigo);height:4px;border-radius:4px;outline:none;cursor:pointer}
+    .range-limits{display:flex;justify-content:space-between;font-family:'JetBrains Mono';font-size:9px;color:var(--border2);margin-top:2px}
+
+    /* Select */
+    select{width:100%;padding:7px 10px;background:var(--surface2);border:1px solid var(--border2);border-radius:7px;color:var(--text);font-size:12px;font-family:'Inter';outline:none;cursor:pointer}
+    select:focus{border-color:var(--indigo)}
+
+    /* Number input */
+    input[type=number]{width:100%;padding:7px 10px;background:var(--surface2);border:1px solid var(--border2);border-radius:7px;color:var(--text);font-size:12px;font-family:'JetBrains Mono';outline:none}
+    input[type=number]:focus{border-color:var(--indigo)}
+
+    /* Toggle */
+    .toggle-row{display:flex;align-items:center;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--border)}
+    .toggle-row:last-child{border-bottom:none;padding-bottom:0}
+    .toggle-info{display:flex;flex-direction:column;gap:2px}
+    .toggle-name{font-size:12px;font-weight:600}
+    .toggle-desc{font-size:10px;color:var(--muted)}
+    .switch{position:relative;width:40px;height:22px;flex-shrink:0}
+    .switch input{opacity:0;width:0;height:0}
+    .slider{position:absolute;cursor:pointer;inset:0;background:var(--border2);border-radius:22px;transition:background .3s}
+    .slider::before{content:'';position:absolute;width:16px;height:16px;left:3px;bottom:3px;background:#fff;border-radius:50%;transition:transform .3s}
+    input:checked+.slider{background:var(--indigo)}
+    input:checked+.slider::before{transform:translateX(18px)}
+
+    /* Summary card */
+    .summary-card{background:rgba(99,102,241,.05);border:1px solid rgba(99,102,241,.25);border-radius:10px;padding:14px 16px;display:grid;grid-template-columns:repeat(4,1fr);gap:10px}
+    .sum-item{display:flex;flex-direction:column;gap:2px}
+    .sum-key{font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:.07em}
+    .sum-val{font-family:'JetBrains Mono';font-size:14px;font-weight:700;color:var(--indigo)}
+
+    /* Launch button */
+    .launch-btn{display:flex;align-items:center;justify-content:center;gap:10px;
+      padding:14px 32px;background:linear-gradient(135deg,var(--indigo),var(--violet));
+      color:#fff;border:none;border-radius:10px;font-size:14px;font-weight:700;
+      cursor:pointer;transition:all .2s;width:100%;letter-spacing:.02em;
+      box-shadow:0 0 24px rgba(99,102,241,.35);font-family:'Inter'}
+    .launch-btn:hover{transform:translateY(-2px);box-shadow:0 0 36px rgba(99,102,241,.5)}
+    .launch-btn:active{transform:translateY(0)}
+    .launch-btn:disabled{opacity:.5;cursor:not-allowed;transform:none}
+    .launch-btn .spinner{width:16px;height:16px;border:2px solid rgba(255,255,255,.3);border-top-color:#fff;border-radius:50%;animation:spin .7s linear infinite;display:none}
+    @keyframes spin{to{transform:rotate(360deg)}}
+
+    .success-msg{background:rgba(16,185,129,.08);border:1px solid rgba(16,185,129,.3);border-radius:10px;padding:14px;color:var(--emerald);font-size:13px;text-align:center;display:none}
+
+    /* Preset chips */
+    .presets{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px}
+    .preset{padding:5px 12px;border-radius:7px;font-size:11px;font-weight:600;border:1px solid var(--border2);background:transparent;color:var(--muted);cursor:pointer;transition:all .15s;font-family:'Inter'}
+    .preset:hover,.preset.active{border-color:var(--indigo);color:#a5b4fc;background:rgba(99,102,241,.1)}
+  </style>
+</head>
+<body>
+<div class="header">
+  <h1>⚙️ Training Configuration</h1>
+  <span class="sub">Customize your model training before launch</span>
+</div>
+
+<div class="main">
+  <!-- Presets -->
+  <div class="section">
+    <div class="section-title"><span class="dot" style="background:var(--violet)"></span>Quick Presets</div>
+    <div class="presets">
+      <button class="preset" onclick="applyPreset('fast')">⚡ Fast Run (debug)</button>
+      <button class="preset active" onclick="applyPreset('balanced')">⚖️ Balanced (default)</button>
+      <button class="preset" onclick="applyPreset('deep')">🔬 Deep Train</button>
+      <button class="preset" onclick="applyPreset('overfit')">🔥 Overfit Test</button>
+    </div>
+    <div class="summary-card">
+      <div class="sum-item"><div class="sum-key">Epochs</div><div class="sum-val" id="sum-epochs">50</div></div>
+      <div class="sum-item"><div class="sum-key">Test Split</div><div class="sum-val" id="sum-split">20%</div></div>
+      <div class="sum-item"><div class="sum-key">Batch Size</div><div class="sum-val" id="sum-batch">64</div></div>
+      <div class="sum-item"><div class="sum-key">Learning Rate</div><div class="sum-val" id="sum-lr">0.001</div></div>
+    </div>
+  </div>
+
+  <!-- Core Training Params -->
+  <div class="section">
+    <div class="section-title"><span class="dot" style="background:var(--indigo)"></span>Core Parameters</div>
+    <div class="param-grid three">
+      <div class="param">
+        <div class="param-header">
+          <span class="param-label">Epochs</span>
+          <span class="param-val" id="val-epochs">50</span>
+        </div>
+        <input type="range" id="sl-epochs" min="5" max="300" value="50" oninput="update('epochs',this.value)">
+        <div class="range-limits"><span>5</span><span>300</span></div>
+        <div class="param-desc">Number of full training passes over the dataset.</div>
+      </div>
+      <div class="param">
+        <div class="param-header">
+          <span class="param-label">Test Size</span>
+          <span class="param-val" id="val-test_size">20%</span>
+        </div>
+        <input type="range" id="sl-test_size" min="5" max="40" value="20" oninput="update('test_size',this.value)">
+        <div class="range-limits"><span>5%</span><span>40%</span></div>
+        <div class="param-desc">Fraction of data held out for validation. Larger = safer but less training data.</div>
+      </div>
+      <div class="param">
+        <div class="param-header">
+          <span class="param-label">Batch Size</span>
+          <span class="param-val" id="val-batch_size">64</span>
+        </div>
+        <select id="sl-batch_size" onchange="update('batch_size',this.value)">
+          <option value="16">16 — Very small (slow, high variance)</option>
+          <option value="32">32 — Small (stable)</option>
+          <option value="64" selected>64 — Medium (default)</option>
+          <option value="128">128 — Large (fast)</option>
+          <option value="256">256 — Very large (needs big RAM)</option>
+        </select>
+        <div class="param-desc">Samples per gradient update. Smaller batches = more noise = better generalization.</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Optimizer & LR -->
+  <div class="section">
+    <div class="section-title"><span class="dot" style="background:var(--amber)"></span>Optimizer Settings</div>
+    <div class="param-grid">
+      <div class="param">
+        <div class="param-header">
+          <span class="param-label">Optimizer</span>
+        </div>
+        <select id="sl-optimizer" onchange="update('optimizer',this.value)">
+          <option value="adam" selected>Adam — Adaptive momentum (recommended)</option>
+          <option value="sgd">SGD — Classic stochastic gradient descent</option>
+          <option value="adamw">AdamW — Adam + weight decay (regularization)</option>
+          <option value="rmsprop">RMSProp — Good for RNNs</option>
+        </select>
+        <div class="param-desc">Algorithm used to update weights during back-propagation.</div>
+      </div>
+      <div class="param">
+        <div class="param-header">
+          <span class="param-label">Learning Rate</span>
+          <span class="param-val" id="val-lr">0.001</span>
+        </div>
+        <input type="range" id="sl-lr" min="1" max="100" value="10" oninput="updateLR(this.value)">
+        <div class="range-limits"><span>0.00001</span><span>0.1</span></div>
+        <div class="param-desc">Step size for weight updates. Too high = diverges. Too low = slow convergence.</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Regularization -->
+  <div class="section">
+    <div class="section-title"><span class="dot" style="background:var(--emerald)"></span>Regularization &amp; Stopping</div>
+    <div class="toggle-row">
+      <div class="toggle-info">
+        <div class="toggle-name">Early Stopping</div>
+        <div class="toggle-desc">Stop training automatically if validation loss doesn't improve for 10 epochs. Prevents overfitting.</div>
+      </div>
+      <label class="switch"><input type="checkbox" id="tog-early_stop" checked onchange="update('early_stop',this.checked)"><span class="slider"></span></label>
+    </div>
+    <div class="toggle-row">
+      <div class="toggle-info">
+        <div class="toggle-name">Dropout Regularization</div>
+        <div class="toggle-desc">Randomly disables neurons during training to reduce overfitting. Applied at 0.3 rate.</div>
+      </div>
+      <label class="switch"><input type="checkbox" id="tog-dropout" checked onchange="update('dropout',this.checked)"><span class="slider"></span></label>
+    </div>
+    <div class="toggle-row">
+      <div class="toggle-info">
+        <div class="toggle-name">Class Weights (Imbalanced Data)</div>
+        <div class="toggle-desc">Compensates for imbalanced target classes by up-weighting rare classes in the loss function.</div>
+      </div>
+      <label class="switch"><input type="checkbox" id="tog-class_weights" checked onchange="update('class_weights',this.checked)"><span class="slider"></span></label>
+    </div>
+    <div class="toggle-row">
+      <div class="toggle-info">
+        <div class="toggle-name">Shuffle Training Data</div>
+        <div class="toggle-desc">Randomizes sample order each epoch. Almost always beneficial.</div>
+      </div>
+      <label class="switch"><input type="checkbox" id="tog-shuffle" checked onchange="update('shuffle',this.checked)"><span class="slider"></span></label>
+    </div>
+  </div>
+
+  <!-- Optuna HPT -->
+  <div class="section">
+    <div class="section-title"><span class="dot" style="background:var(--cyan)"></span>Hyperparameter Tuning (Optuna)</div>
+    <div class="param-grid">
+      <div class="param">
+        <div class="param-header">
+          <span class="param-label">HPT Trials</span>
+          <span class="param-val" id="val-hpt_trials">15</span>
+        </div>
+        <input type="range" id="sl-hpt_trials" min="5" max="50" value="15" oninput="update('hpt_trials',this.value)">
+        <div class="range-limits"><span>5</span><span>50</span></div>
+        <div class="param-desc">Number of Optuna trials to run before selecting best hyperparameters.</div>
+      </div>
+      <div class="param">
+        <div class="param-header">
+          <span class="param-label">Random Seed</span>
+        </div>
+        <input type="number" id="inp-seed" value="42" min="0" max="9999" onchange="update('seed',this.value)"
+               style="margin-top:4px">
+        <div class="param-desc">Seed for reproducibility. Same seed = same results every run.</div>
+      </div>
+    </div>
+  </div>
+
+  <button class="launch-btn" id="launch-btn" onclick="launch()">
+    <span class="spinner" id="launch-spinner"></span>
+    🚀 Save Configuration
+  </button>
+
+  <div class="success-msg" id="success-msg">
+    ✅ Training configuration saved! The pipeline will proceed with your settings.<br>
+    <small style="color:var(--muted);display:block;margin-top:4px">You can close this panel — training will begin shortly.</small>
+  </div>
+</div>
+
+<script>
+const params = new URLSearchParams(window.location.search);
+const SESSION = params.get('session_id') || 'default';
+
+const config = {
+  epochs: 50, test_size: 0.2, batch_size: 64,
+  optimizer: 'adam', lr: 0.001, early_stop: true,
+  dropout: true, class_weights: true, shuffle: true,
+  hpt_trials: 15, seed: 42
+};
+
+// LR mapping (log scale: 1→0.00001, 100→0.1)
+function lrFromSlider(v) {
+  return parseFloat((10 ** (-5 + 4 * (v - 1) / 99)).toFixed(6));
+}
+
+function updateLR(v) {
+  const lr = lrFromSlider(v);
+  config.lr = lr;
+  document.getElementById('val-lr').textContent = lr;
+  document.getElementById('sum-lr').textContent = lr;
+  updateSummary();
+}
+
+function update(key, val) {
+  if (key === 'test_size') {
+    config[key] = parseInt(val) / 100;
+    document.getElementById('val-test_size').textContent = val + '%';
+    document.getElementById('sum-split').textContent = val + '%';
+  } else if (key === 'epochs') {
+    config[key] = parseInt(val);
+    document.getElementById('val-epochs').textContent = val;
+    document.getElementById('sum-epochs').textContent = val;
+  } else if (key === 'hpt_trials') {
+    config[key] = parseInt(val);
+    document.getElementById('val-hpt_trials').textContent = val;
+  } else if (key === 'batch_size') {
+    config[key] = parseInt(val);
+    document.getElementById('val-batch_size').textContent = val;
+    document.getElementById('sum-batch').textContent = val;
+  } else if (key === 'optimizer') {
+    config[key] = val;
+  } else if (key === 'seed') {
+    config[key] = parseInt(val) || 42;
+  } else {
+    config[key] = typeof val === 'boolean' ? val : val;
+  }
+}
+
+function updateSummary() {}
+
+const PRESETS = {
+  fast:     { epochs:10,  test_size:0.2, batch_size:128, lr:0.01,  hpt_trials:5,  early_stop:false, dropout:false },
+  balanced: { epochs:50,  test_size:0.2, batch_size:64,  lr:0.001, hpt_trials:15, early_stop:true,  dropout:true },
+  deep:     { epochs:150, test_size:0.15,batch_size:32,  lr:0.0005,hpt_trials:30, early_stop:true,  dropout:true },
+  overfit:  { epochs:200, test_size:0.1, batch_size:16,  lr:0.005, hpt_trials:10, early_stop:false, dropout:false },
+};
+
+function applyPreset(name) {
+  document.querySelectorAll('.preset').forEach(b => b.classList.remove('active'));
+  event.target.classList.add('active');
+  const p = PRESETS[name];
+  Object.assign(config, p);
+
+  document.getElementById('sl-epochs').value  = p.epochs;
+  document.getElementById('val-epochs').textContent = p.epochs;
+  document.getElementById('sum-epochs').textContent = p.epochs;
+
+  const ts = Math.round(p.test_size * 100);
+  document.getElementById('sl-test_size').value = ts;
+  document.getElementById('val-test_size').textContent = ts + '%';
+  document.getElementById('sum-split').textContent = ts + '%';
+
+  document.getElementById('sl-batch_size').value = p.batch_size;
+  document.getElementById('val-batch_size').textContent = p.batch_size;
+  document.getElementById('sum-batch').textContent = p.batch_size;
+
+  document.getElementById('sl-hpt_trials').value = p.hpt_trials;
+  document.getElementById('val-hpt_trials').textContent = p.hpt_trials;
+
+  document.getElementById('tog-early_stop').checked = p.early_stop;
+  document.getElementById('tog-dropout').checked = p.dropout;
+
+  // LR: find slider position
+  const lrSliderVal = Math.round(1 + (Math.log10(p.lr) + 5) / 4 * 99);
+  document.getElementById('sl-lr').value = lrSliderVal;
+  document.getElementById('val-lr').textContent = p.lr;
+  document.getElementById('sum-lr').textContent = p.lr;
+}
+
+async function launch() {
+  const btn = document.getElementById('launch-btn');
+  const spinner = document.getElementById('launch-spinner');
+  btn.disabled = true;
+  spinner.style.display = 'inline-block';
+
+  try {
+    const res = await fetch(`/training-config-store?session_id=${SESSION}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(config)
+    });
+    const data = await res.json();
+    if (data.ok) {
+      btn.style.display = 'none';
+      document.getElementById('success-msg').style.display = 'block';
+      // Notify parent that config is saved
+      window.parent.postMessage({ type: 'TRAINING_CONFIG_SAVED', config }, '*');
+    } else {
+      throw new Error(data.error || 'Unknown error');
+    }
+  } catch(e) {
+    spinner.style.display = 'none';
+    btn.disabled = false;
+    btn.textContent = '⚠️ Error — Try Again';
+    console.error(e);
+  }
+}
+</script>
+</body>
+</html>

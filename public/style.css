@@ -1,0 +1,46 @@
+/* OmniML Professional Branding Overrides */
+
+/* Hide the default Chainlit splash logo */
+#logo,
+.logo,
+img[src*="chainlit"] {
+    display: none !important;
+}
+
+/* Hide the 'Built with Chainlit' watermark/footer */
+.watermark,
+a[href*="chainlit.io"] {
+    visibility: hidden !important;
+    display: none !important;
+}
+
+/* Replace the splash screen logo with OmniML logo */
+.cl-splash-screen::before {
+    content: "";
+    display: block;
+    width: 200px;
+    height: 200px;
+    background-image: url("/public/logo.png");
+    background-size: contain;
+    background-repeat: no-repeat;
+    margin-bottom: 20px;
+}
+
+/* Style the page for a premium "OmniML" feel */
+body {
+    font-family: 'Inter', sans-serif !important;
+}
+
+/* Customize the sidebar and chat bubbles slightly */
+.cl-sidebar {
+    background-color: #0f172a !important;
+    /* Professional Dark Blue/Slate */
+}
+
+/* Improve header branding */
+header h1 {
+    font-weight: 800 !important;
+    letter-spacing: -0.05em !important;
+    color: #38bdf8 !important;
+    /* Sky Blue */
+}

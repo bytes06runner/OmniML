@@ -1,0 +1,225 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>HPT Console</title>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&display=swap');
+        body {
+            background-color: #0a0a0f;
+            color: #e6edf3;
+            font-family: 'JetBrains Mono', monospace;
+            margin: 0;
+            padding: 20px;
+            font-size: 14px;
+        }
+        .container {
+            border: 1px solid #30363d;
+            border-radius: 8px;
+            overflow: hidden;
+            background: #0d1117;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.3);
+        }
+        .header {
+            display: flex;
+            justify-content: space-between;
+            padding: 15px 20px;
+            border-bottom: 1px solid #30363d;
+            background: #161b22;
+            font-weight: bold;
+        }
+        .progress-container {
+            padding: 10px 20px;
+            border-bottom: 1px solid #30363d;
+            display: flex;
+            align-items: center;
+            gap: 15px;
+        }
+        .progress-track {
+            flex-grow: 1;
+            height: 10px;
+            background: #21262d;
+            border-radius: 5px;
+            overflow: hidden;
+        }
+        .progress-bar {
+            height: 100%;
+            background: #6366f1;
+            width: 0%;
+            transition: width 0.3s ease, background-color 0.3s ease;
+        }
+        .section-title {
+            color: #8b949e;
+            font-size: 12px;
+            padding: 15px 20px 5px;
+            text-transform: uppercase;
+        }
+        .params-list {
+            padding: 10px 20px;
+            border-bottom: 1px solid #30363d;
+        }
+        .param-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 5px;
+        }
+        .param-name { color: #8b949e; width: 30%; }
+        .param-visual {
+            flex-grow: 1;
+            height: 2px;
+            background: #30363d;
+            position: relative;
+            margin: 0 15px;
+        }
+        .param-dot {
+            width: 8px;
+            height: 8px;
+            background: #6366f1;
+            border-radius: 50%;
+            position: absolute;
+            top: -3px;
+            left: 50%;
+        }
+        .param-value { color: #e6edf3; width: 20%; text-align: right; }
+        .sparkline-box {
+            padding: 15px 20px;
+            border-bottom: 1px solid #30363d;
+            height: 120px;
+            display: flex;
+            align-items: flex-end;
+            gap: 4px;
+        }
+        .spark-bar {
+            flex-grow: 1;
+            background: #6366f1;
+            opacity: 0.6;
+            min-height: 2px;
+            border-radius: 2px 2px 0 0;
+            display: flex;
+            flex-direction: column;
+            justify-content: flex-end;
+            align-items: center;
+            font-size: 9px;
+            padding-bottom: 2px;
+            color: transparent;
+            transition: all 0.3s;
+        }
+        .spark-bar:hover { opacity: 1; color: white; }
+        .spark-bar.best {
+            background: #10b981;
+            opacity: 1;
+        }
+        .raw-log {
+            padding: 15px 20px;
+            height: 200px;
+            overflow-y: auto;
+            color: #8b949e;
+            font-size: 12px;
+            background: #0a0a0f;
+            line-height: 1.5;
+        }
+        .status-complete { color: #10b981; font-weight: bold; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <span id="title-text">HYPERPARAMETER TUNING</span>
+            <span id="trial-counter">Trial 0 / 15</span>
+        </div>
+        <div class="progress-container" id="prog-cont">
+            <div class="progress-track">
+                <div class="progress-bar" id="prog-bar"></div>
+            </div>
+            <span id="prog-pct" style="width: 40px; text-align:right;">0%</span>
+            <span id="best-display" style="width: 140px; text-align:right; color:#10b981;">Best: 0.000</span>
+        </div>
+        
+        <div id="tuning-complete" style="display:none; padding:15px 20px; border-bottom:1px solid #30363d; color:#10b981; font-weight:bold; font-size:16px; text-align:center;">
+            TUNING COMPLETE — Best params locked. Proceeding to training...
+        </div>
+
+        <div class="section-title">CURRENT TRIAL PARAMS</div>
+        <div class="params-list" id="params-box">
+            <div style="color:#8b949e; font-style:italic;">Initializing Optuna...</div>
+        </div>
+
+        <div class="section-title">TRIAL HISTORY</div>
+        <div class="sparkline-box" id="spark-box"></div>
+
+        <div class="section-title">RAW LOG</div>
+        <div class="raw-log" id="log-box"></div>
+    </div>
+
+    <script>
+        const updateUI = async () => {
+            try {
+                const res = await fetch('/hpt-status');
+                if (!res.ok) return;
+                const state = await res.json();
+                
+                // Header
+                document.getElementById('trial-counter').innerText = `Trial ${state.current_trial} / ${state.total_trials}`;
+                document.getElementById('best-display').innerText = `Best: ${state.best_value?.toFixed(4) || "0.000"}`;
+                
+                // Progress
+                const pct = state.total_trials ? Math.round((state.current_trial / state.total_trials) * 100) : 0;
+                document.getElementById('prog-bar').style.width = `${pct}%`;
+                document.getElementById('prog-pct').innerText = `${pct}%`;
+                
+                if (state.status === 'complete') {
+                    document.getElementById('prog-bar').style.backgroundColor = '#10b981';
+                    document.getElementById('title-text').classList.add('status-complete');
+                    document.getElementById('prog-cont').style.display = 'none';
+                    document.getElementById('tuning-complete').style.display = 'block';
+                }
+
+                // Params mapping
+                const params = state.status === 'complete' ? state.best_params : state.current_params;
+                const pBox = document.getElementById('params-box');
+                if (params && Object.keys(params).length > 0) {
+                    let html = '';
+                    for (const [k, v] of Object.entries(params)) {
+                        let displayValue = typeof v === 'number' ? 
+                            v.toFixed(String(v).includes('.') ? 5 : 0) : v;
+                        html += `
+                        <div class="param-row">
+                            <div class="param-name">${k}</div>
+                            <div class="param-visual"><div class="param-dot" style="left: ${Math.random()*80 + 10}%"></div></div>
+                            <div class="param-value">${displayValue}</div>
+                        </div>`;
+                    }
+                    pBox.innerHTML = html;
+                }
+                
+                // Sparkline
+                const sBox = document.getElementById('spark-box');
+                const maxVal = Math.max(...state.trials.map(t => typeof t.value === 'number' ? t.value : 0), 0.01);
+                let sHtml = '';
+                state.trials.forEach(t => {
+                    const h = maxVal > 0 ? ((t.value || 0) / maxVal) * 100 : 0;
+                    const isBest = t.value === state.best_value;
+                    sHtml += `<div class="spark-bar ${isBest ? 'best' : ''}" style="height: ${Math.max(h, 2)}%">${t.value?.toFixed(3)}</div>`;
+                });
+                sBox.innerHTML = sHtml;
+                
+                // Logs
+                const logBox = document.getElementById('log-box');
+                if (state.logs && state.logs.length > 0) {
+                    const curLog = state.logs.map(l => `> ${l}`).join('<br>');
+                    if (logBox.innerHTML !== curLog) {
+                        logBox.innerHTML = curLog;
+                        logBox.scrollTop = logBox.scrollHeight;
+                    }
+                }
+            } catch (e) {
+                console.error("Poll error", e);
+            }
+        };
+        setInterval(updateUI, 800);
+        updateUI();
+    </script>
+</body>
+</html>

@@ -1,0 +1,514 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>OmniML — Live EDA</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --bg:#0a0a0f; --surface:#0d1117; --surface2:#111827;
+      --border:#21262d; --border2:#30363d;
+      --text:#e6edf3; --muted:#8b949e; --muted2:#6b7280;
+      --indigo:#6366f1; --emerald:#10b981; --amber:#f59e0b;
+      --rose:#ef4444; --violet:#8b5cf6; --cyan:#06b6d4; --sky:#0ea5e9;
+    }
+    html,body { height:100%; background:var(--bg); color:var(--text); font-family:'Inter',sans-serif; overflow:hidden; }
+
+    /* ── TOP BAR ─────────────────────────────── */
+    .topbar {
+      height:52px; display:flex; align-items:center; gap:16px; padding:0 20px;
+      background:rgba(13,17,23,0.92); border-bottom:1px solid var(--border);
+      backdrop-filter:blur(12px); position:relative; z-index:20; flex-shrink:0;
+    }
+    .topbar-logo { font-family:'JetBrains Mono'; font-size:13px; font-weight:700; color:var(--indigo); display:flex; align-items:center; gap:6px; }
+    .badge { padding:2px 8px; border-radius:20px; font-size:10px; font-weight:700; letter-spacing:0.05em; }
+    .badge-running { background:rgba(99,102,241,.15); color:var(--indigo); border:1px solid rgba(99,102,241,.3); }
+    .badge-done    { background:rgba(16,185,129,.15); color:var(--emerald); border:1px solid rgba(16,185,129,.3); }
+    .topbar-stats  { display:flex; gap:20px; font-family:'JetBrains Mono'; font-size:11px; color:var(--muted); }
+    .topbar-stat span { color:var(--text); font-weight:600; }
+    .topbar-progress { flex:1; display:flex; align-items:center; gap:10px; max-width:320px; margin-left:auto; }
+    .progress-track { flex:1; height:4px; background:var(--border); border-radius:4px; overflow:hidden; }
+    .progress-fill  { height:100%; border-radius:4px; background:linear-gradient(90deg,var(--indigo),var(--violet)); transition:width .5s ease; }
+    .progress-pct   { font-family:'JetBrains Mono'; font-size:10px; color:var(--muted); white-space:nowrap; }
+
+    /* ── MAIN LAYOUT ─────────────────────────── */
+    .shell { display:flex; flex-direction:column; height:100vh; }
+    .body  { flex:1; display:grid; grid-template-columns:260px 1fr; overflow:hidden; }
+
+    /* ── STEPS PANEL ─────────────────────────── */
+    .steps-panel { background:var(--surface); border-right:1px solid var(--border); overflow-y:auto; padding:10px; display:flex; flex-direction:column; gap:4px; }
+    .step { border-radius:8px; padding:8px 10px; border:1px solid transparent; background:rgba(255,255,255,.02); cursor:default; transition:all .25s; }
+    .step.running { border-color:rgba(99,102,241,.4); background:rgba(99,102,241,.07); }
+    .step.done    { border-color:rgba(16,185,129,.25); background:rgba(16,185,129,.03); }
+    .step.error   { border-color:rgba(239,68,68,.4);  background:rgba(239,68,68,.06); }
+    .step.waiting { opacity:.4; }
+    .step-hd { display:flex; align-items:center; gap:8px; }
+    .step-icon { width:18px; height:18px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-size:10px; flex-shrink:0; }
+    .step.running .step-icon { background:rgba(99,102,241,.25); animation:pulse 1.4s infinite; }
+    .step.done    .step-icon { background:rgba(16,185,129,.2); color:var(--emerald); }
+    .step.error   .step-icon { background:rgba(239,68,68,.2);  color:var(--rose); }
+    .step.waiting .step-icon { background:var(--border); color:var(--muted2); }
+    .step-name { font-size:11px; font-weight:600; }
+    .step.done .step-name { color:var(--emerald); }
+    .step.running .step-name { color:#a5b4fc; }
+    .step-detail { font-family:'JetBrains Mono'; font-size:9px; color:var(--muted2); margin-top:3px; padding-left:26px; line-height:1.5; }
+    .step.running .step-detail { color:#818cf8; }
+    .step-bar { height:2px; background:var(--border); border-radius:2px; overflow:hidden; margin-top:5px; }
+    .step.running .step-bar-fill { background:var(--indigo); animation:shimmer 1.5s infinite; }
+    .step.done    .step-bar-fill { background:var(--emerald); }
+    .step-bar-fill { height:100%; border-radius:2px; transition:width .6s ease; }
+    @keyframes pulse { 0%,100%{box-shadow:0 0 0 0 rgba(99,102,241,.4)} 50%{box-shadow:0 0 0 5px rgba(99,102,241,0)} }
+    @keyframes shimmer { 0%,100%{opacity:.6} 50%{opacity:1} }
+
+    /* ── CHARTS AREA ─────────────────────────── */
+    .charts-area { overflow-y:auto; padding:14px; display:flex; flex-direction:column; gap:12px; }
+
+    /* Skeleton */
+    .skeleton { display:grid; grid-template-columns:1fr 1fr 1fr; gap:12px; }
+    .sk-card { background:var(--surface); border:1px solid var(--border); border-radius:10px; padding:16px; }
+    .sk-bar { background:var(--border); border-radius:4px; animation:skPulse 1.4s ease infinite; }
+    @keyframes skPulse { 0%,100%{opacity:.4} 50%{opacity:.8} }
+
+    /* Card */
+    .card { background:var(--surface); border:1px solid var(--border); border-radius:10px; padding:16px; animation:fadeUp .35s ease; }
+    @keyframes fadeUp { from{opacity:0;transform:translateY(8px)} to{opacity:1;transform:translateY(0)} }
+    .card-title { font-size:10px; font-weight:700; letter-spacing:.08em; text-transform:uppercase; margin-bottom:12px; display:flex; align-items:center; gap:6px; }
+    .dot { width:6px; height:6px; border-radius:50%; }
+
+    /* Stats row */
+    .stat-row { display:grid; grid-template-columns:repeat(4,1fr); gap:8px; }
+    .stat { background:rgba(255,255,255,.02); border:1px solid var(--border); border-radius:8px; padding:10px 12px; }
+    .stat-val { font-family:'JetBrains Mono'; font-size:22px; font-weight:700; }
+    .stat-lbl { font-size:10px; color:var(--muted); margin-top:2px; }
+
+    /* Chart grid for distributions + categoricals */
+    .chart-grid { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
+    .chart-wrap { position:relative; height:220px; }
+
+    /* Feature pill buttons */
+    .pill-row { display:flex; gap:6px; flex-wrap:wrap; margin-bottom:10px; }
+    .pill { padding:3px 9px; border-radius:5px; font-size:10px; font-family:'JetBrains Mono'; border:1px solid var(--border2); background:transparent; color:var(--muted); cursor:pointer; transition:all .15s; white-space:nowrap; }
+    .pill.active,.pill:hover { border-color:var(--indigo); color:#a5b4fc; background:rgba(99,102,241,.1); }
+
+    /* Feature stats line */
+    .feat-stats { display:flex; flex-wrap:wrap; gap:14px; font-family:'JetBrains Mono'; font-size:9px; color:var(--muted); margin-top:8px; }
+    .feat-stats span { color:var(--indigo); }
+
+    /* Missing / Outlier chips */
+    .chips { display:flex; flex-wrap:wrap; gap:6px; }
+    .chip { display:flex; align-items:center; gap:5px; padding:4px 10px; border-radius:7px; font-size:10px; font-family:'JetBrains Mono'; border:1px solid; }
+    .chip-warn  { border-color:rgba(245,158,11,.4); background:rgba(245,158,11,.07); color:var(--amber); }
+    .chip-error { border-color:rgba(239,68,68,.4);  background:rgba(239,68,68,.07);  color:var(--rose); }
+    .chip-ok    { border-color:rgba(16,185,129,.3); background:rgba(16,185,129,.06); color:var(--emerald); }
+
+    /* Top correlations */
+    .corr-row { display:flex; align-items:center; gap:8px; padding:5px 0; border-bottom:1px solid var(--border); font-size:10px; font-family:'JetBrains Mono'; }
+    .corr-row:last-child { border:none; }
+    .corr-names { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:var(--muted); }
+    .corr-bar-bg { width:80px; height:4px; background:var(--border); border-radius:2px; flex-shrink:0; }
+    .corr-bar-fill { height:100%; border-radius:2px; }
+    .corr-val { width:36px; text-align:right; font-weight:700; flex-shrink:0; }
+
+    /* Correlation heatmap */
+    .heatmap-wrap { overflow:auto; max-height:260px; }
+    .heatmap-grid { display:inline-grid; gap:2px; font-size:8px; font-family:'JetBrains Mono'; }
+    .hm-cell { width:50px; height:32px; display:flex; align-items:center; justify-content:center; border-radius:3px; cursor:default; transition:transform .15s; }
+    .hm-cell:hover { transform:scale(1.1); z-index:2; }
+    .hm-label { font-size:8px; color:var(--muted2); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+
+    /* AI Insight */
+    .insight-box { background:rgba(16,185,129,.04); border:1px solid rgba(16,185,129,.2); border-radius:10px; padding:14px; }
+    .insight-text { font-size:12px; line-height:1.8; color:#a7f3d0; white-space:pre-wrap; }
+    .typing::after { content:'▋'; animation:blink .8s step-end infinite; }
+    @keyframes blink { 50%{opacity:0} }
+
+    /* Three-column layout for smaller cards */
+    .three-col { display:grid; grid-template-columns:1fr 1fr 1fr; gap:12px; }
+
+    ::-webkit-scrollbar { width:5px; height:5px; }
+    ::-webkit-scrollbar-thumb { background:var(--border2); border-radius:4px; }
+    ::-webkit-scrollbar-track { background:transparent; }
+    .spinner { width:12px; height:12px; border:2px solid rgba(99,102,241,.3); border-top-color:var(--indigo); border-radius:50%; animation:spin .7s linear infinite; display:inline-block; }
+    @keyframes spin { to{transform:rotate(360deg)} }
+  </style>
+</head>
+<body>
+<div class="shell">
+  <!-- Top Bar -->
+  <div class="topbar">
+    <div class="topbar-logo">📊 OmniML Analyst</div>
+    <span class="badge badge-running" id="status-badge">
+      <span class="spinner" id="spinner" style="vertical-align:middle;margin-right:4px"></span>Analyzing…
+    </span>
+    <div class="topbar-stats" id="topbar-stats" style="display:none">
+      <div><span id="ts-rows">—</span> rows</div>
+      <div><span id="ts-num">—</span> numeric</div>
+      <div><span id="ts-cat">—</span> categorical</div>
+      <div><span id="ts-missing">—</span> missing cols</div>
+    </div>
+    <div class="topbar-progress">
+      <div class="progress-track"><div class="progress-fill" id="prog-fill" style="width:0%"></div></div>
+      <div class="progress-pct" id="prog-pct">0%</div>
+    </div>
+  </div>
+
+  <div class="body">
+    <!-- Left: Steps -->
+    <div class="steps-panel" id="steps-container"></div>
+
+    <!-- Right: Charts -->
+    <div class="charts-area" id="charts-area">
+      <!-- Skeleton -->
+      <div id="skeleton" class="skeleton">
+        <div class="sk-card"><div class="sk-bar" style="height:16px;width:50%;margin-bottom:12px"></div><div class="sk-bar" style="height:160px"></div></div>
+        <div class="sk-card"><div class="sk-bar" style="height:16px;width:60%;margin-bottom:12px"></div><div class="sk-bar" style="height:160px"></div></div>
+        <div class="sk-card"><div class="sk-bar" style="height:16px;width:40%;margin-bottom:12px"></div><div class="sk-bar" style="height:160px"></div></div>
+      </div>
+
+      <div id="sec-stats"    style="display:none"></div>
+      <div id="sec-missing"  style="display:none"></div>
+      <div id="sec-dist"     style="display:none"></div>
+      <div id="sec-outlier"  style="display:none"></div>
+      <div id="sec-corr"     style="display:none"></div>
+      <div id="sec-heatmap"  style="display:none"></div>
+      <div id="sec-insights" style="display:none"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+const params  = new URLSearchParams(window.location.search);
+const SESSION = params.get('session_id') || 'default';
+let raw = null, narration = '', distChart = null, catChart = null, stepsMap = {};
+
+Chart.defaults.color = '#8b949e';
+Chart.defaults.borderColor = '#21262d';
+
+// ── Steps ────────────────────────────────────────────────────────────────────
+function upsertStep(step) {
+  const c = document.getElementById('steps-container');
+  let el = stepsMap[step.id];
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'step-' + step.id;
+    el.className = 'step waiting';
+    el.innerHTML = `
+      <div class="step-hd">
+        <div class="step-icon" id="si-${step.id}">○</div>
+        <div class="step-name" id="sn-${step.id}">${step.label}</div>
+      </div>
+      <div class="step-detail" id="sd-${step.id}"></div>
+      <div class="step-bar"><div class="step-bar-fill" id="sb-${step.id}" style="width:0%"></div></div>`;
+    c.appendChild(el);
+    stepsMap[step.id] = el;
+  }
+  el.className = 'step ' + step.status;
+  document.getElementById('si-' + step.id).textContent = step.status === 'done' ? '✓' : step.status === 'error' ? '✗' : '◈';
+  document.getElementById('sn-' + step.id).textContent = step.label;
+  document.getElementById('sd-' + step.id).textContent = step.detail || '';
+  document.getElementById('sb-' + step.id).style.width = step.pct + '%';
+  document.getElementById('prog-fill').style.width = step.pct + '%';
+  document.getElementById('prog-pct').textContent = step.pct + '%';
+}
+
+// ── Show section ─────────────────────────────────────────────────────────────
+function show(id, html) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.style.display = 'block';
+  if (html) el.innerHTML = html;
+}
+function hide(id) { const e = document.getElementById(id); if(e) e.style.display='none'; }
+
+// ── Handle SSE step ──────────────────────────────────────────────────────────
+function handleStep(step) {
+  upsertStep(step);
+  if (!raw) return;
+  if (step.id === 'load'    && step.status === 'done') { hide('skeleton'); buildStats(); }
+  if (step.id === 'missing' && step.status === 'done') buildMissing(step.data?.missing || raw.missing || {});
+  if (step.id === 'dist'    && step.status === 'done') buildDist();
+  if (step.id === 'cat'     && step.status === 'done') buildCat();
+  if (step.id === 'outlier' && step.status === 'done') buildOutliers(step.data?.outliers || raw.outliers || {});
+  if (step.id === 'corr'    && step.status === 'done') buildCorr(step.data?.top_corrs || raw.top_corrs || []);
+  if (step.id === 'narrate' && step.status === 'done') buildInsights();
+}
+
+// ── Build sections ────────────────────────────────────────────────────────────
+function buildStats() {
+  if (!raw) return;
+  const numCols = Object.keys(raw.distributions||{}).length;
+  const catCols = Object.keys(raw.categoricals||{}).length;
+  const mCols   = Object.keys(raw.missing||{}).length;
+  document.getElementById('ts-rows').textContent    = (raw.row_count||0).toLocaleString();
+  document.getElementById('ts-num').textContent     = numCols;
+  document.getElementById('ts-cat').textContent     = catCols;
+  document.getElementById('ts-missing').textContent = mCols;
+  document.getElementById('topbar-stats').style.display = 'flex';
+
+  show('sec-stats', `
+    <div class="card">
+      <div class="card-title"><div class="dot" style="background:var(--indigo)"></div>Dataset Overview</div>
+      <div class="stat-row">
+        <div class="stat"><div class="stat-val" style="color:var(--indigo)">${(raw.row_count||0).toLocaleString()}</div><div class="stat-lbl">Rows</div></div>
+        <div class="stat"><div class="stat-val" style="color:var(--violet)">${raw.col_count||raw.columns?.length||'—'}</div><div class="stat-lbl">Columns</div></div>
+        <div class="stat"><div class="stat-val" style="color:var(--cyan)">${numCols}</div><div class="stat-lbl">Numeric</div></div>
+        <div class="stat"><div class="stat-val" style="color:var(--emerald)">${catCols}</div><div class="stat-lbl">Categorical</div></div>
+      </div>
+    </div>`);
+}
+
+function buildMissing(missing) {
+  const entries = Object.entries(missing);
+  const chips = entries.length
+    ? entries.map(([c,i]) => `<span class="chip chip-warn">⚠ ${c.length>22?c.slice(0,20)+'…':c} <em>${i.pct}%</em></span>`).join('')
+    : '<span class="chip chip-ok">✓ No missing values</span>';
+  show('sec-missing', `<div class="card"><div class="card-title"><div class="dot" style="background:var(--amber)"></div>Missing Values</div><div class="chips">${chips}</div></div>`);
+}
+
+function buildDist() {
+  if (!raw?.distributions) return;
+  const cols = Object.keys(raw.distributions);
+  if (!cols.length) return;
+
+  const pills = cols.map((c,i) =>
+    `<button class="pill${i===0?' active':''}" onclick="switchDist('${c}',this)">${c}</button>`
+  ).join('');
+
+  show('sec-dist', `
+    <div class="card">
+      <div class="card-title"><div class="dot" style="background:var(--violet)"></div>Feature Distributions</div>
+      <div class="chart-grid">
+        <div>
+          <div class="pill-row" id="dist-pills">${pills}</div>
+          <div class="chart-wrap"><canvas id="dist-chart"></canvas></div>
+          <div class="feat-stats" id="dist-stats"></div>
+        </div>
+        <div id="dist-info-card" style="background:rgba(255,255,255,.02);border:1px solid var(--border);border-radius:8px;padding:12px;font-family:'JetBrains Mono';font-size:10px;color:var(--muted);display:flex;flex-direction:column;gap:6px;">
+          <div style="color:var(--muted2);font-size:9px;text-transform:uppercase;letter-spacing:.08em;margin-bottom:4px">Feature Info</div>
+          <div id="dist-meta">Select a feature to view statistics</div>
+        </div>
+      </div>
+    </div>`);
+  updateDistChart(cols[0]);
+}
+
+function switchDist(col, btn) {
+  document.querySelectorAll('#dist-pills .pill').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  updateDistChart(col);
+}
+
+function updateDistChart(col) {
+  const d = raw.distributions[col];
+  if (!d) return;
+  const labels = d.bins.slice(0,-1).map((b,i) => `${b.toFixed(1)}–${d.bins[i+1].toFixed(1)}`);
+  if (distChart) distChart.destroy();
+  const ctx = document.getElementById('dist-chart')?.getContext('2d');
+  if (!ctx) return;
+  distChart = new Chart(ctx, {
+    type:'bar', data:{ labels, datasets:[{
+      label:col, data:d.counts,
+      backgroundColor:'rgba(99,102,241,0.5)', borderColor:'#6366f1',
+      borderWidth:1, borderRadius:3
+    }]},
+    options:{ responsive:true, maintainAspectRatio:false, plugins:{legend:{display:false}},
+      scales:{ y:{grid:{color:'#21262d'},ticks:{color:'#8b949e',font:{size:9}}},
+               x:{grid:{display:false},ticks:{color:'#8b949e',maxRotation:40,font:{size:8}}} },
+      animation:{duration:250} }
+  });
+  const el = document.getElementById('dist-stats');
+  if (el && d.mean !== undefined)
+    el.innerHTML = [['mean',d.mean],['std',d.std],['min',d.min],['max',d.max],['skew',d.skew]]
+      .map(([k,v])=>`<span style="color:var(--indigo)">${k}</span> ${v}`).join('<span style="color:var(--border2);margin:0 6px">·</span>');
+  const meta = document.getElementById('dist-meta');
+  if (meta && d.mean !== undefined) {
+    const skewLabel = Math.abs(d.skew) < 0.5 ? 'Symmetric' : d.skew > 1 ? 'Right-Skewed' : d.skew < -1 ? 'Left-Skewed' : 'Slightly Skewed';
+    meta.innerHTML = `
+      <div>Range: <b style="color:var(--text)">${d.min} → ${d.max}</b></div>
+      <div>Mean: <b style="color:var(--text)">${d.mean}</b></div>
+      <div>Std Dev: <b style="color:var(--text)">${d.std}</b></div>
+      <div>Skewness: <b style="color:${Math.abs(d.skew)>1?'var(--amber)':'var(--emerald)'}">${d.skew} (${skewLabel})</b></div>`;
+  }
+}
+
+function buildCat() {
+  if (!raw?.categoricals) return;
+  const cols = Object.keys(raw.categoricals);
+  if (!cols.length) return;
+  const pills = cols.map((c,i) =>
+    `<button class="pill${i===0?' active':''}" onclick="switchCat('${c}',this)">${c}</button>`
+  ).join('');
+  // Append to dist card or make new
+  const existing = document.getElementById('sec-dist');
+  const catSection = document.createElement('div');
+  catSection.innerHTML = `
+    <div class="card">
+      <div class="card-title"><div class="dot" style="background:var(--cyan)"></div>Categorical Features</div>
+      <div class="pill-row" id="cat-pills">${pills}</div>
+      <div class="chart-wrap"><canvas id="cat-chart"></canvas></div>
+    </div>`;
+  document.getElementById('sec-dist').after(catSection);
+  updateCatChart(cols[0]);
+}
+
+function switchCat(col, btn) {
+  document.querySelectorAll('#cat-pills .pill').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  updateCatChart(col);
+}
+
+function updateCatChart(col) {
+  const d = raw.categoricals[col];
+  if (!d) return;
+  if (catChart) catChart.destroy();
+  const ctx = document.getElementById('cat-chart')?.getContext('2d');
+  if (!ctx) return;
+  catChart = new Chart(ctx, {
+    type:'bar', data:{ labels:d.labels, datasets:[{
+      label:col, data:d.values,
+      backgroundColor:'rgba(6,182,212,0.5)', borderColor:'#06b6d4',
+      borderWidth:1, borderRadius:3
+    }]},
+    options:{ indexAxis:'y', responsive:true, maintainAspectRatio:false,
+      plugins:{legend:{display:false}},
+      scales:{ x:{grid:{color:'#21262d'},ticks:{color:'#8b949e',font:{size:9}}},
+               y:{grid:{display:false},ticks:{color:'#8b949e',font:{size:9}}} },
+      animation:{duration:250} }
+  });
+}
+
+function buildOutliers(outliers) {
+  const entries = Object.entries(outliers);
+  const chips = entries.length
+    ? entries.map(([c,i]) => `<span class="chip chip-error">⚡ ${c.length>22?c.slice(0,20)+'…':c} <em>${i.pct}%</em></span>`).join('')
+    : '<span class="chip chip-ok">✓ No significant outliers</span>';
+  show('sec-outlier', `
+    <div class="card">
+      <div class="card-title"><div class="dot" style="background:var(--rose)"></div>Outlier Detection — IQR Fence</div>
+      <div class="chips">${chips}</div>
+    </div>`);
+}
+
+function buildCorr(topCorrs) {
+  // Top correlations list
+  let rows = !topCorrs?.length ? '<div style="color:var(--muted);font-size:11px">No strong correlations found.</div>'
+    : topCorrs.map(tc => {
+      const abs = Math.abs(tc.r), color = tc.r > 0 ? 'var(--emerald)' : 'var(--rose)';
+      return `<div class="corr-row">
+        <div class="corr-names">${tc.a} ↔ ${tc.b}</div>
+        <div class="corr-bar-bg"><div class="corr-bar-fill" style="width:${abs*100}%;background:${color}"></div></div>
+        <div class="corr-val" style="color:${color}">${tc.r.toFixed(2)}</div>
+      </div>`;
+    }).join('');
+
+  // Heatmap
+  let heatmap = '';
+  if (raw?.correlation) {
+    const keys = Object.keys(raw.correlation);
+    if (keys.length) {
+      const cols = `max-content repeat(${keys.length},50px)`;
+      let cells = `<div style="width:60px"></div>` + keys.map(k => `<div class="hm-label" style="width:50px;height:32px;display:flex;align-items:center;justify-content:center" title="${k}">${k.length>7?k.slice(0,6)+'…':k}</div>`).join('');
+      keys.forEach(row => {
+        cells += `<div class="hm-label" style="width:60px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:flex;align-items:center;font-size:8px;padding-right:4px" title="${row}">${row.length>8?row.slice(0,7)+'…':row}</div>`;
+        keys.forEach(col => {
+          const v = raw.correlation[row]?.[col] ?? 0, abs = Math.abs(v);
+          let bg = 'rgba(33,38,45,.5)';
+          if (row===col) bg='rgba(99,102,241,.3)';
+          else if (v>0.5) bg=`rgba(16,185,129,${.15+abs*.6})`;
+          else if (v<-0.5) bg=`rgba(239,68,68,${.15+abs*.6})`;
+          else if (abs>0.2) bg=`rgba(99,102,241,${.1+abs*.3})`;
+          cells += `<div class="hm-cell" style="background:${bg}" title="${row} ↔ ${col}: ${v}">${row===col?'1.0':v.toFixed(2)}</div>`;
+        });
+      });
+      heatmap = `<div class="heatmap-wrap"><div class="heatmap-grid" style="grid-template-columns:${cols}">${cells}</div></div>`;
+    }
+  }
+
+  show('sec-corr', `
+    <div class="chart-grid">
+      <div class="card">
+        <div class="card-title"><div class="dot" style="background:var(--emerald)"></div>Top Feature Correlations</div>
+        ${rows}
+      </div>
+      <div class="card">
+        <div class="card-title"><div class="dot" style="background:var(--emerald)"></div>Correlation Heatmap</div>
+        ${heatmap || '<div style="color:var(--muted);font-size:11px">No numeric correlation data.</div>'}
+      </div>
+    </div>`);
+}
+
+function buildInsights() {
+  show('sec-insights', `
+    <div class="card">
+      <div class="card-title"><div class="dot" style="background:var(--emerald);animation:pulse 1.4s infinite"></div>AI Data Insights (Groq)</div>
+      <div class="insight-box">
+        <div class="insight-text typing" id="insight-text"></div>
+      </div>
+    </div>`);
+  const el = document.getElementById('insight-text');
+  if (!el) return;
+  let i = 0;
+  const text = narration || 'No insights generated.';
+  const timer = setInterval(() => {
+    if (i < text.length) {
+      el.textContent += text[i++];
+    } else {
+      el.classList.remove('typing');
+      clearInterval(timer);
+    }
+  }, 7);
+}
+
+// ── Done handler ──────────────────────────────────────────────────────────────
+function markDone() {
+  const badge = document.getElementById('status-badge');
+  badge.className = 'badge badge-done';
+  badge.innerHTML = '✓ Complete';
+  document.getElementById('prog-fill').style.width = '100%';
+  document.getElementById('prog-pct').textContent = '100%';
+  document.getElementById('spinner').style.display = 'none';
+}
+
+// ── Load all sections immediately (post-analysis) ────────────────────────────
+function loadAll() {
+  hide('skeleton');
+  buildStats();
+  buildMissing(raw.missing || {});
+  buildDist();
+  buildCat();
+  buildOutliers(raw.outliers || {});
+  buildCorr(raw.top_corrs || []);
+  buildInsights();
+  markDone();
+}
+
+// ── SSE ───────────────────────────────────────────────────────────────────────
+function connectSSE() {
+  const es = new EventSource(`/eda-progress?session_id=${SESSION}`);
+  es.onmessage = e => {
+    const msg = JSON.parse(e.data);
+    if (msg.type === 'done') { es.close(); markDone(); if (raw) loadAll(); return; }
+    handleStep(msg);
+  };
+  es.onerror = () => { es.close(); if (raw) loadAll(); };
+}
+
+// ── Init ──────────────────────────────────────────────────────────────────────
+document.addEventListener('DOMContentLoaded', () => {
+  try {
+    const de = window.parent.document.getElementById('eda-data-b64');
+    const ne = window.parent.document.getElementById('eda-narration-b64');
+    if (de && de.innerText.length > 4) {
+      raw = JSON.parse(atob(de.innerText));
+      narration = ne ? atob(ne.innerText) : '';
+    }
+  } catch(e) {}
+  connectSSE();
+  if (raw) loadAll();
+});
+</script>
+</body>
+</html>
