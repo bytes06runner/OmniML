@@ -1,0 +1,42 @@
+# Virtual environments
+venv/
+venv312/
+
+# Pycache
+__pycache__/
+*.pyc
+anomallm.egg-info/
+
+# Data and Models
+data/
+*.pth
+database.db
+*.png
+*.pdf
+*FD00*.txt
+readme.txt
+metrics.json
+
+# Environment variables
+.env
+
+# Chainlit
+.chainlit/
+
+# Temp scripts
+last_run_script.py
+check_cl_message.py
+verify_robust_fix.py
+
+# Unrelated/Testing scripts
+dashboard.py
+demo.py
+demo_kaggle.py
+train.py
+test_*.py
+workflow.py
+
+# Other
+automl_studio/
+.git_bak/
+.files/
