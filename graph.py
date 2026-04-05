@@ -354,16 +354,11 @@ def dataset_ranker_node(state: AgentState) -> dict:
     """Auto-resolves architecture selection and merges Kaggle & HuggingFace datasets."""
     import json
     kr = state.get("kaggle_results", "[]")
-    hfr = state.get("hf_results", "[]")
     
     try: kr_json = json.loads(kr)
     except: kr_json = []
     
-    try: hfr_json = json.loads(hfr)
-    except: hfr_json = []
-    
-    combined = kr_json + hfr_json
-    combined = [c for c in combined if "error" not in c]
+    combined = [c for c in kr_json if "error" not in c]
     
     arch_full = "Custom Visual Graph" 
     
@@ -1298,7 +1293,6 @@ def build_graph() -> StateGraph:
     graph.add_node("architect",          architect_node)
     graph.add_node("hitl_model_pause",   hitl_model_pause_node)
     graph.add_node("kaggle_sourcer",     kaggle_sourcer_node)
-    graph.add_node("hf_sourcer",         huggingface_sourcer_node)
     graph.add_node("dataset_ranker",     dataset_ranker_node)
     graph.add_node("hitl_pause",         hitl_pause_node)
     graph.add_node("dataset_downloader", dataset_downloader_node)
@@ -1316,8 +1310,7 @@ def build_graph() -> StateGraph:
     graph.set_entry_point("architect")
     graph.add_edge("architect",          "hitl_model_pause")
     graph.add_edge("hitl_model_pause",   "kaggle_sourcer")
-    graph.add_edge("kaggle_sourcer",     "hf_sourcer")
-    graph.add_edge("hf_sourcer",         "dataset_ranker")
+    graph.add_edge("kaggle_sourcer",     "dataset_ranker")
     graph.add_edge("dataset_ranker",     "hitl_pause")
     graph.add_edge("hitl_pause",         "dataset_downloader")
     graph.add_edge("dataset_downloader", "eda_analyzer")
