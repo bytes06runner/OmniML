@@ -15,6 +15,7 @@ Author: AnomaLLM v3 / Antigravity
 import os
 import re
 import sys
+import json
 import subprocess
 import textwrap
 import tempfile
