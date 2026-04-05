@@ -8,7 +8,7 @@ Powered by **Groq (gpt-oss-120b)** for lightning-fast reasoning and **Chainlit**
 
 ## ✨ Key Features
 
-- **🧠 Autonomous Agentic Workflow:** A densely orchestrated LangGraph system featuring specialized agents:
+- **🧠 s:** A densely orchestrated LangGraph system featuring specialized agents:
   - **Architect:** Suggests neural network structures dynamically based on your problem description.
   - **Kaggle & HuggingFace Sourcer:** Searches and analyzes real-world datasets for a 1:1 match.
   - **EDA Analyzer:** Generates comprehensive real-time data profiling, including distributions, correlations, outliers, and Groq-powered AI insights via an interactive dashboard.
