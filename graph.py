@@ -366,7 +366,7 @@ def dataset_ranker_node(state: AgentState) -> dict:
         return {
             "architecture": arch_full,
             "dataset_options": [{
-                "title": "⚠️ Search failed across both platforms",
+                "title": "⚠️ Kaggle Database Search Failed",
                 "ref":   "error/error",
                 "url":   "https://kaggle.com",
                 "source": "kaggle",

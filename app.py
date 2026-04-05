@@ -502,7 +502,7 @@ async def on_architecture_finished(action: cl.Action):
                         return
 
                     actions = []
-                    desc_text = "These are **real datasets** from Kaggle & HuggingFace — click one to download & proceed:\n\n"
+                    desc_text = "These are **real datasets** from Kaggle — click one to download & proceed:\n\n"
                     for i, ds in enumerate(dataset_opts):
                         source = ds.get("source", "kaggle").lower()
                         card_md = render_dataset_card(ds, source)
