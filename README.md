@@ -1,3 +1,12 @@
+---
+title: OmniML
+emoji: 🤖
+colorFrom: blue
+colorTo: indigo
+sdk: docker
+pinned: false
+---
+
 # 🤖 OmniML — Autonomous HITL Auto-ML Pipeline
 
 **OmniML** is a "Judge-Ready," production-stable autonomous machine learning pipeline. It leverages a multi-agent **LangGraph** workflow to automate the entire ML lifecycle: from architectural selection and real-world dataset sourcing (via Kaggle) to hyperparameter optimization (Optuna) and professional PDF evaluation.
