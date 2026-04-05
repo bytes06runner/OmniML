@@ -106,3 +106,9 @@ The dashboard will be available at [http://localhost:8001](http://localhost:8001
 
 ---
 *OmniML: Autonomous, Transparent, and Professional Machine Learning.*
+
+---
+
+## 📆 Repository Info
+
+- **Created:** April 3, 2026 (UTC) — [Initial commit](https://github.com/bytes06runner/OmniML/commit/40042c8d020cf55594b5f2af902e9a0535ec3034)
