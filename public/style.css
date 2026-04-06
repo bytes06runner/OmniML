@@ -1,46 +1,263 @@
-/* OmniML Professional Branding Overrides */
+/* ── Fonts ─────────────────────────────────────────── */
+@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;600&family=Inter:wght@300;400;500;600&display=swap');
 
-/* Hide the default Chainlit splash logo */
-#logo,
-.logo,
-img[src*="chainlit"] {
-    display: none !important;
+/* ── Root variables ─────────────────────────────────── */
+:root {
+  --bg-base:      #020409;
+  --bg-surface:   #0d1117;
+  --bg-elevated:  #161b22;
+  --border:       #21262d;
+  --border-glow:  rgba(99,102,241,0.3);
+  --indigo:       #6366f1;
+  --emerald:      #10b981;
+  --amber:        #f59e0b;
+  --rose:         #f43f5e;
+  --cyan:         #06b6d4;
+  --text-primary: #e6edf3;
+  --text-muted:   #8b949e;
+  --text-faint:   #484f58;
+  --radius:       12px;
+  --mono:         'JetBrains Mono', monospace;
+  --sans:         'Inter', system-ui, sans-serif;
 }
 
-/* Hide the 'Built with Chainlit' watermark/footer */
-.watermark,
-a[href*="chainlit.io"] {
-    visibility: hidden !important;
-    display: none !important;
-}
+/* ── Global reset ───────────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; margin: 0; }
 
-/* Replace the splash screen logo with OmniML logo */
-.cl-splash-screen::before {
-    content: "";
-    display: block;
-    width: 200px;
-    height: 200px;
-    background-image: url("/public/logo.png");
-    background-size: contain;
-    background-repeat: no-repeat;
-    margin-bottom: 20px;
-}
-
-/* Style the page for a premium "OmniML" feel */
+/* ── Animated background ────────────────────────────── */
 body {
-    font-family: 'Inter', sans-serif !important;
+  background: var(--bg-base) !important;
+  font-family: var(--sans) !important;
+  color: var(--text-primary) !important;
+  min-height: 100vh;
+  position: relative;
+  overflow-x: hidden;
 }
 
-/* Customize the sidebar and chat bubbles slightly */
-.cl-sidebar {
-    background-color: #0f172a !important;
-    /* Professional Dark Blue/Slate */
+/* Animated grid background */
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background-image:
+    linear-gradient(rgba(99,102,241,0.03) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(99,102,241,0.03) 1px, transparent 1px);
+  background-size: 40px 40px;
+  pointer-events: none;
+  z-index: 0;
 }
 
-/* Improve header branding */
-header h1 {
-    font-weight: 800 !important;
-    letter-spacing: -0.05em !important;
-    color: #38bdf8 !important;
-    /* Sky Blue */
+/* Animated radial glow that drifts slowly */
+body::after {
+  content: '';
+  position: fixed;
+  width: 800px;
+  height: 800px;
+  border-radius: 50%;
+  background: radial-gradient(
+    circle,
+    rgba(99,102,241,0.06) 0%,
+    transparent 70%
+  );
+  top: -200px;
+  right: -200px;
+  pointer-events: none;
+  z-index: 0;
+  animation: driftGlow 20s ease-in-out infinite alternate;
+}
+
+@keyframes driftGlow {
+  0%   { transform: translate(0, 0); }
+  33%  { transform: translate(-100px, 150px); }
+  66%  { transform: translate(80px, -80px); }
+  100% { transform: translate(-60px, 200px); }
+}
+
+/* ── Chainlit app shell ──────────────────────────────── */
+#root, .MuiBox-root {
+  background: transparent !important;
+  font-family: var(--sans) !important;
+}
+
+/* Main chat container */
+.cl-chat-container,
+[class*="chat"] {
+  background: transparent !important;
+}
+
+/* Header / navbar */
+header, [class*="header"], nav {
+  background: rgba(2,4,9,0.8) !important;
+  backdrop-filter: blur(20px) !important;
+  border-bottom: 1px solid var(--border) !important;
+  position: sticky !important;
+  top: 0 !important;
+  z-index: 100 !important;
+}
+
+/* ── Message bubbles ─────────────────────────────────── */
+/* User message */
+[class*="user"] [class*="message"],
+[class*="UserMessage"] {
+  background: linear-gradient(
+    135deg,
+    rgba(99,102,241,0.15),
+    rgba(99,102,241,0.08)
+  ) !important;
+  border: 1px solid rgba(99,102,241,0.25) !important;
+  border-radius: 16px 16px 4px 16px !important;
+  color: var(--text-primary) !important;
+  font-family: var(--sans) !important;
+  box-shadow: 0 4px 24px rgba(99,102,241,0.08) !important;
+}
+
+/* Assistant message */
+[class*="assistant"] [class*="message"],
+[class*="AssistantMessage"],
+.cl-message {
+  background: var(--bg-surface) !important;
+  border: 1px solid var(--border) !important;
+  border-radius: 4px 16px 16px 16px !important;
+  color: var(--text-primary) !important;
+  font-family: var(--sans) !important;
+  line-height: 1.7 !important;
+}
+
+/* ── Step / tool call pills ──────────────────────────── */
+[class*="Step"], [class*="step"],
+[class*="tool"], [class*="Tool"] {
+  background: var(--bg-elevated) !important;
+  border: 1px solid var(--border) !important;
+  border-radius: 8px !important;
+  font-family: var(--mono) !important;
+  font-size: 12px !important;
+  color: var(--text-muted) !important;
+  padding: 6px 12px !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 6px !important;
+}
+
+/* ── Code blocks ─────────────────────────────────────── */
+pre, code, [class*="code"], [class*="Code"] {
+  background: var(--bg-base) !important;
+  border: 1px solid var(--border) !important;
+  border-radius: 8px !important;
+  font-family: var(--mono) !important;
+  font-size: 12px !important;
+  color: #a5d6ff !important;
+}
+
+/* ── Input area ──────────────────────────────────────── */
+[class*="input"], textarea,
+[class*="InputArea"], [class*="inputArea"] {
+  background: var(--bg-elevated) !important;
+  border: 1px solid var(--border) !important;
+  border-radius: 16px !important;
+  color: var(--text-primary) !important;
+  font-family: var(--sans) !important;
+  transition: border-color 0.2s ease !important;
+}
+
+[class*="input"]:focus, textarea:focus {
+  border-color: var(--indigo) !important;
+  box-shadow: 0 0 0 3px rgba(99,102,241,0.1) !important;
+  outline: none !important;
+}
+
+/* ── Buttons ─────────────────────────────────────────── */
+button[class*="Action"],
+[class*="action-button"],
+.cl-action-button {
+  background: var(--bg-elevated) !important;
+  border: 1px solid var(--border) !important;
+  border-radius: 8px !important;
+  color: var(--text-primary) !important;
+  font-family: var(--mono) !important;
+  font-size: 12px !important;
+  padding: 8px 16px !important;
+  cursor: pointer !important;
+  transition: all 0.2s ease !important;
+}
+
+button[class*="Action"]:hover,
+[class*="action-button"]:hover {
+  background: rgba(99,102,241,0.15) !important;
+  border-color: var(--indigo) !important;
+  color: #a5b4fc !important;
+  transform: translateY(-1px) !important;
+  box-shadow: 0 4px 12px rgba(99,102,241,0.15) !important;
+}
+
+/* Send button */
+button[class*="send"], button[class*="Submit"] {
+  background: var(--indigo) !important;
+  border: none !important;
+  border-radius: 50% !important;
+  box-shadow: 0 4px 16px rgba(99,102,241,0.4) !important;
+  transition: all 0.2s ease !important;
+}
+
+button[class*="send"]:hover {
+  transform: scale(1.05) !important;
+  box-shadow: 0 6px 24px rgba(99,102,241,0.5) !important;
+}
+
+/* ── Scrollbar ───────────────────────────────────────── */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--text-faint);
+}
+
+/* ── Typography in messages ──────────────────────────── */
+h1, h2, h3 {
+  font-family: var(--sans) !important;
+  font-weight: 600 !important;
+  letter-spacing: -0.02em !important;
+  color: var(--text-primary) !important;
+}
+
+strong, b { color: var(--text-primary) !important; }
+
+a { 
+  color: #a5b4fc !important; 
+  text-decoration: none !important;
+}
+a:hover { 
+  color: var(--indigo) !important;
+  text-decoration: underline !important;
+}
+
+/* Inline code */
+code:not(pre code) {
+  background: rgba(99,102,241,0.12) !important;
+  border: 1px solid rgba(99,102,241,0.2) !important;
+  border-radius: 4px !important;
+  padding: 1px 6px !important;
+  font-size: 0.9em !important;
+  color: #a5b4fc !important;
+}
+
+/* ── Pipeline step indicators ────────────────────────── */
+/* Animated pulse on active pipeline step */
+[class*="running"] [class*="step"],
+[class*="pending"] [class*="step"] {
+  border-color: rgba(99,102,241,0.5) !important;
+  animation: stepPulse 2s ease-in-out infinite !important;
+}
+
+@keyframes stepPulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(99,102,241,0); }
+  50%       { box-shadow: 0 0 0 4px rgba(99,102,241,0.1); }
+}
+
+/* ── Watermark / branding ────────────────────────────── */
+[class*="watermark"], [class*="powered"] {
+  opacity: 0.3 !important;
+  font-size: 11px !important;
 }

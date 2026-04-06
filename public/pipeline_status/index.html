@@ -1,0 +1,121 @@
+  <!DOCTYPE html>
+  <html>
+  <head>
+  <meta charset="UTF-8">
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: transparent;
+      font-family: 'JetBrains Mono', monospace;
+      padding: 12px;
+    }
+    .stage {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 8px 10px;
+      border-radius: 8px;
+      margin-bottom: 4px;
+      border: 1px solid transparent;
+      transition: all 0.3s ease;
+      font-size: 11px;
+    }
+    .stage.complete {
+      background: rgba(16,185,129,0.08);
+      border-color: rgba(16,185,129,0.2);
+      color: #10b981;
+    }
+    .stage.active {
+      background: rgba(99,102,241,0.12);
+      border-color: rgba(99,102,241,0.3);
+      color: #a5b4fc;
+      animation: activePulse 2s ease infinite;
+    }
+    .stage.pending {
+      color: #484f58;
+    }
+    @keyframes activePulse {
+      0%,100% { border-color: rgba(99,102,241,0.3); }
+      50%      { border-color: rgba(99,102,241,0.6); }
+    }
+    .dot {
+      width: 8px; height: 8px;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+    .complete .dot { background: #10b981; }
+    .active   .dot {
+      background: #6366f1;
+      animation: dotPulse 1s ease infinite;
+    }
+    .pending  .dot { background: #21262d; }
+    @keyframes dotPulse {
+      0%,100% { transform: scale(1); opacity: 1; }
+      50%      { transform: scale(1.4); opacity: 0.7; }
+    }
+    .spinner {
+      width: 8px; height: 8px;
+      border: 1.5px solid rgba(99,102,241,0.3);
+      border-top-color: #6366f1;
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    h3 {
+      font-size: 10px;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: #484f58;
+      margin-bottom: 10px;
+      padding-bottom: 6px;
+      border-bottom: 1px solid #21262d;
+    }
+  </style>
+  </head>
+  <body>
+  <h3>Pipeline</h3>
+  <div id="stages"></div>
+  <script>
+    const STAGES = [
+      { id: 'architect',  label: 'Architecture' },
+      { id: 'dataset',    label: 'Dataset' },
+      { id: 'eda',        label: 'EDA' },
+      { id: 'config',     label: 'Training Config' },
+      { id: 'hpt',        label: 'HPT (Optuna)' },
+      { id: 'engineer',   label: 'Code Generation' },
+      { id: 'execution',  label: 'Training' },
+      { id: 'arxiv',      label: 'ArXiv Compare' },
+      { id: 'deployment', label: 'Deployment' },
+      { id: 'report',     label: 'Final Report' },
+    ];
+
+    async function poll() {
+      try {
+        const res  = await fetch('/pipeline-status');
+        const data = await res.json();
+        render(data.stages || {});
+      } catch(e) {}
+    }
+
+    function render(stageStatus) {
+      const container = document.getElementById('stages');
+      container.innerHTML = STAGES.map(s => {
+        const status = stageStatus[s.id] || 'pending';
+        const icon = status === 'complete'
+          ? '<span class="dot"></span>'
+          : status === 'active'
+            ? '<span class="spinner"></span>'
+            : '<span class="dot"></span>';
+        return `<div class="stage ${status}">
+          ${icon}
+          <span>${s.label}</span>
+        </div>`;
+      }).join('');
+    }
+
+    render({});
+    setInterval(poll, 1500);
+    poll();
+  </script>
+  </body>
+  </html>

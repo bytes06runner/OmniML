@@ -1,34 +1,40 @@
-# Virtual environments
+# ─── Virtual Environments ─────────────────────────
 venv/
 venv312/
+.venv/
 
-# Pycache
+# ─── Python Cache ─────────────────────────────────
 __pycache__/
 *.pyc
+*.pyo
 anomallm.egg-info/
 
-# Data and Models
+# ─── Runtime Data & Generated Outputs ─────────────
 data/
+exports/
 *.pth
-database.db
+*.db
 *.png
 *.pdf
 *FD00*.txt
 readme.txt
 metrics.json
 
-# Environment variables
+# ─── Environment Variables ────────────────────────
 .env
 
-# Chainlit
+# ─── Chainlit ─────────────────────────────────────
 .chainlit/
 
-# Temp scripts
+# ─── Node Modules ────────────────────────────────
+node_modules/
+
+# ─── Temp / Debug Scripts ─────────────────────────
 last_run_script.py
 check_cl_message.py
 verify_robust_fix.py
 
-# Unrelated/Testing scripts
+# ─── Unrelated / Testing Scripts ──────────────────
 dashboard.py
 demo.py
 demo_kaggle.py
@@ -36,7 +42,8 @@ train.py
 test_*.py
 workflow.py
 
-# Other
+# ─── Other ────────────────────────────────────────
 automl_studio/
 .git_bak/
 .files/
+.DS_Store

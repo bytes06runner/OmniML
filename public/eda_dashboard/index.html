@@ -119,11 +119,7 @@
     .hm-cell:hover { transform:scale(1.1); z-index:2; }
     .hm-label { font-size:8px; color:var(--muted2); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 
-    /* AI Insight */
-    .insight-box { background:rgba(16,185,129,.04); border:1px solid rgba(16,185,129,.2); border-radius:10px; padding:14px; }
-    .insight-text { font-size:12px; line-height:1.8; color:#a7f3d0; white-space:pre-wrap; }
-    .typing::after { content:'▋'; animation:blink .8s step-end infinite; }
-    @keyframes blink { 50%{opacity:0} }
+
 
     /* Three-column layout for smaller cards */
     .three-col { display:grid; grid-template-columns:1fr 1fr 1fr; gap:12px; }
@@ -174,7 +170,7 @@
       <div id="sec-outlier"  style="display:none"></div>
       <div id="sec-corr"     style="display:none"></div>
       <div id="sec-heatmap"  style="display:none"></div>
-      <div id="sec-insights" style="display:none"></div>
+
     </div>
   </div>
 </div>
@@ -182,7 +178,7 @@
 <script>
 const params  = new URLSearchParams(window.location.search);
 const SESSION = params.get('session_id') || 'default';
-let raw = null, narration = '', distChart = null, catChart = null, stepsMap = {};
+let raw = null, distChart = null, catChart = null, stepsMap = {};
 
 Chart.defaults.color = '#8b949e';
 Chart.defaults.borderColor = '#21262d';
@@ -233,7 +229,7 @@ function handleStep(step) {
   if (step.id === 'cat'     && step.status === 'done') buildCat();
   if (step.id === 'outlier' && step.status === 'done') buildOutliers(step.data?.outliers || raw.outliers || {});
   if (step.id === 'corr'    && step.status === 'done') buildCorr(step.data?.top_corrs || raw.top_corrs || []);
-  if (step.id === 'narrate' && step.status === 'done') buildInsights();
+  // narrate step removed — AI insights disabled
 }
 
 // ── Build sections ────────────────────────────────────────────────────────────
@@ -440,27 +436,7 @@ function buildCorr(topCorrs) {
     </div>`);
 }
 
-function buildInsights() {
-  show('sec-insights', `
-    <div class="card">
-      <div class="card-title"><div class="dot" style="background:var(--emerald);animation:pulse 1.4s infinite"></div>AI Data Insights (Groq)</div>
-      <div class="insight-box">
-        <div class="insight-text typing" id="insight-text"></div>
-      </div>
-    </div>`);
-  const el = document.getElementById('insight-text');
-  if (!el) return;
-  let i = 0;
-  const text = narration || 'No insights generated.';
-  const timer = setInterval(() => {
-    if (i < text.length) {
-      el.textContent += text[i++];
-    } else {
-      el.classList.remove('typing');
-      clearInterval(timer);
-    }
-  }, 7);
-}
+// AI Data Insights (Groq) section removed — produced messy unformatted output
 
 // ── Done handler ──────────────────────────────────────────────────────────────
 function markDone() {
@@ -481,7 +457,7 @@ function loadAll() {
   buildCat();
   buildOutliers(raw.outliers || {});
   buildCorr(raw.top_corrs || []);
-  buildInsights();
+  // buildInsights() removed
   markDone();
 }
 
@@ -503,7 +479,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const ne = window.parent.document.getElementById('eda-narration-b64');
     if (de && de.innerText.length > 4) {
       raw = JSON.parse(atob(de.innerText));
-      narration = ne ? atob(ne.innerText) : '';
+      // narration removed
     }
   } catch(e) {}
   connectSSE();

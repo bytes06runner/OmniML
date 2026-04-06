@@ -33,6 +33,15 @@ _session_problems:        dict = {}
 _session_training_configs: dict = {}   # session_id -> training config dict
 _session_threads:          dict = {}   # session_id -> thread_id string
 
+_pipeline_stages: dict = {}
+
+def set_stage(stage_id: str, status: str):
+    _pipeline_stages[stage_id] = status
+
+@fastapi_app.get("/pipeline-status")
+async def pipeline_status():
+    return JSONResponse({"stages": _pipeline_stages})
+
 @fastapi_app.post("/sync-graph")
 async def sync_graph(request: Request):
     body = await request.json()
@@ -55,6 +64,51 @@ async def get_hpt_status():
 async def get_training_status():
     from graph import training_state
     return JSONResponse(training_state)
+
+@fastapi_app.get("/deploy-status")
+async def deployment_status():
+    """Return export artifact status for the deployment dashboard."""
+    import os
+    export_dir = os.path.join(os.getcwd(), "exports")
+    meta_path  = os.path.join(export_dir, "model_meta.json")
+
+    if not os.path.exists(meta_path):
+        return JSONResponse({"ready": False, "meta": None, "files": {}})
+
+    with open(meta_path) as f:
+        meta = json.load(f)
+
+    filenames = [
+        "model.pt", "model.onnx", "model_scripted.pt",
+        "model_meta.json", "serve_api.py", "Dockerfile", "requirements.txt"
+    ]
+    files = {}
+    for fn in filenames:
+        p = os.path.join(export_dir, fn)
+        if os.path.exists(p):
+            files[fn] = {"exists": True, "size": os.path.getsize(p)}
+        else:
+            files[fn] = {"exists": False, "size": 0}
+
+    return JSONResponse({"ready": True, "meta": meta, "files": files})
+
+@fastapi_app.get("/dl-artifact/{filename}")
+async def download_artifact(filename: str):
+    """Serve exported model artifacts for download."""
+    import os
+    from fastapi.responses import FileResponse
+    safe_names = {
+        "model.pt", "model.onnx", "model.onnx.data", "model_scripted.pt",
+        "model_meta.json", "serve_api.py", "Dockerfile", "requirements.txt"
+    }
+    if filename not in safe_names:
+        return JSONResponse({"error": "Invalid filename"}, status_code=400)
+
+    path = os.path.join(os.getcwd(), "exports", filename)
+    if not os.path.exists(path):
+        return JSONResponse({"error": "File not found"}, status_code=404)
+
+    return FileResponse(path, filename=filename)
 
 @fastapi_app.get("/get-architect-graph")
 async def get_architect_graph(session_id: str = "default"):
@@ -330,6 +384,27 @@ async def main(message: cl.Message):
         content=f"*⚡ Launching autonomous pipeline for:* **{user_query}**"
     ).send()
 
+    pipeline_html = """
+    <div style="
+      position:fixed; left:16px; top:80px;
+      width:160px; z-index:50;
+      background:rgba(13,17,23,0.9);
+      border:1px solid #21262d;
+      border-radius:12px;
+      backdrop-filter:blur(16px);
+      overflow:hidden;
+    ">
+      <iframe
+        src="/public/pipeline_status/index.html"
+        width="160" height="380"
+        style="border:none; display:block;">
+      </iframe>
+    </div>
+    """
+    await cl.Message(content=pipeline_html).send()
+    
+    set_stage('architect', 'active')
+
     try:
         # ── Phase 1: Run until FIRST HITL interrupt (Model Selection) ────
         async with cl.Step(name=_node_label("architect"), show_input=False) as arch_step:
@@ -475,6 +550,9 @@ async def on_architecture_finished(action: cl.Action):
     layer_count = len(new_graph['nodes'])
     edge_count  = len(new_graph['edges'])
     
+    set_stage('architect', 'complete')
+    set_stage('dataset', 'active')
+    
     await cl.Message(
         content=(
             f"✅ **Architecture Locked.**\n"
@@ -562,6 +640,8 @@ async def on_dataset_selected(action: cl.Action):
                     continue
 
                 if node_name == "dataset_downloader":
+                    set_stage('dataset', 'complete')
+                    set_stage('eda', 'active')
                     csv_path = node_state.get("dataset_csv_path", "")
                     async with cl.Step(name=_node_label("dataset_downloader"), show_input=False) as dl_step:
                         dl_step.output = f"✅ Download complete! CSV: `{csv_path}`"
@@ -613,6 +693,8 @@ async def on_dataset_selected(action: cl.Action):
 # ─────────────────────────────────────────────────────────────────────────────
 @cl.action_callback("confirm_eda")
 async def on_eda_confirmed(action: cl.Action):
+    set_stage('eda', 'complete')
+    set_stage('config', 'active')
     # Resolve session_id
     session_id = "default"
     try:
@@ -648,6 +730,8 @@ async def on_eda_confirmed(action: cl.Action):
 # The on_training_launched callback is now simplified to call the helper.
 @cl.action_callback("launch_training")
 async def on_training_launched(action: cl.Action):
+    set_stage('config', 'complete')
+    set_stage('hpt', 'active')
     thread_id = cl.user_session.get("thread_id")
     
     session_id = getattr(action, "payload", {}).get("session_id")
@@ -666,6 +750,8 @@ async def on_training_launched(action: cl.Action):
 @cl.action_callback("select_mode_local")
 @cl.action_callback("select_mode_cloud")
 async def on_execution_mode_selected(action: cl.Action):
+    set_stage('engineer', 'complete')
+    set_stage('execution', 'active')
     thread_id = cl.user_session.get("thread_id")
     config    = {"configurable": {"thread_id": thread_id}}
     payload = getattr(action, "payload", {}) or {}
@@ -695,6 +781,8 @@ async def on_execution_mode_selected(action: cl.Action):
                     continue
 
                 if node_name == "execution_sandbox":
+                    set_stage('execution', 'complete')
+                    set_stage('arxiv', 'active')
                     logs = node_state.get("training_logs", "")
                     url  = node_state.get("kernel_url", "")
 
@@ -711,12 +799,25 @@ async def on_execution_mode_selected(action: cl.Action):
                         await cl.Message(content=f"⚠️ **Execution Failed**. OmniML Debugger Agent has been invoked (Attempt {retries}/3) to automatically rewrite and heal the script.").send()
 
                 elif node_name == "arxiv_comparator":
+                    set_stage('arxiv', 'complete')
+                    set_stage('deployment', 'active')
                     benchmarks = node_state.get("arxiv_benchmarks", "")
                     async with cl.Step(name="📚 ArXiv Comparator", show_input=False) as ax_step:
                         ax_step.output = f"**Literature Benchmarks & Gap Analysis Complete:**\n\n{benchmarks}"
                     await cl.Message(content=f"## 📚 ArXiv Publication Comparison\n\n{benchmarks}").send()
 
+                elif node_name == "model_deployer":
+                    set_stage('deployment', 'complete')
+                    set_stage('report', 'active')
+                    artifacts = node_state.get("deployment_artifacts")
+                    if artifacts:
+                        iframe_html = '<iframe src="/public/deployment_dashboard/index.html" style="width:100%;height:680px;border:none;border-radius:12px;"></iframe>'
+                        await cl.Message(content=f"## 🚀 Model Deployment & Export\n\n{iframe_html}").send()
+                    else:
+                        await cl.Message(content="⚠️ Model export skipped — no artifacts generated.").send()
+
                 elif node_name == "evaluator":
+                    set_stage('report', 'complete')
                     report = node_state.get("final_report", "")
 
                     elements = []
@@ -776,6 +877,8 @@ async def _run_training_pipeline_logic(thread_id: str, session_id: str):
                 await cl.Message(content=f"## 🎛️ Live Hyperparameter Tuning\n\n{html}").send()
 
             elif node_name == "engineer":
+                set_stage('hpt', 'complete')
+                set_stage('engineer', 'active')
                 code = node_state.get("generated_code", "")
                 preview = "\n".join(code.split("\n")[:20])
                 async with cl.Step(name="Engineer", show_input=False) as s:
@@ -799,7 +902,7 @@ async def _run_training_pipeline_logic(thread_id: str, session_id: str):
 
 
 
-custom_paths = ["/sync-graph", "/hpt-status", "/training-status", "/get-architect-graph", "/suggest-architecture", "/eda-progress", "/training-config-store", "/training-config-get", "/launch-pipeline"]
+custom_paths = ["/sync-graph", "/hpt-status", "/pipeline-status", "/training-status", "/get-architect-graph", "/suggest-architecture", "/eda-progress", "/training-config-store", "/training-config-get", "/launch-pipeline", "/deploy-status", "/dl-artifact/{filename}"]
 new_routes = []
 catch_all = []
 for r in fastapi_app.router.routes:

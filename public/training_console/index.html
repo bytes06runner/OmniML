@@ -153,96 +153,191 @@
     <script>
         Chart.defaults.color = '#8b949e';
         Chart.defaults.font.family = "'JetBrains Mono', monospace";
-        
-        const lossCtx = document.getElementById('lossChart').getContext('2d');
-        const accCtx = document.getElementById('accChart').getContext('2d');
-        
-        const chartConfig = (title, label1, label2, color1, color2) => ({
-            type: 'line',
-            data: { labels: [], datasets: [
-                { label: label1, borderColor: color1, data: [], tension: 0.3, borderWidth: 2 },
-                { label: label2, borderColor: color2, borderDash: [5, 5], data: [], tension: 0.3, borderWidth: 2 }
-            ]},
-            options: {
-                responsive: true, maintainAspectRatio: false,
-                plugins: { title: { display: true, text: title, color: '#e6edf3' }, legend: { position: 'bottom', labels: { boxWidth: 12 } } },
+
+        let lossChart = null;
+        let accChart  = null;
+        let lastEpoch = 0;
+
+        function initCharts() {
+            const lossCtx = document.getElementById('lossChart');
+            const accCtx  = document.getElementById('accChart');
+            if (!lossCtx || !accCtx) return;
+            
+            const makeOptions = (title, yLabel) => ({
+                responsive: true,
+                maintainAspectRatio: false,
+                animation: { duration: 300 },
                 scales: {
-                    x: { grid: { color: '#30363d' } },
-                    y: { grid: { color: '#30363d' } }
+                    x: {
+                        ticks: { color: '#8b949e', font: { size: 10 } },
+                        grid:  { color: 'rgba(255,255,255,0.05)' },
+                        title: { display: true, text: 'Epoch',
+                                color: '#8b949e', font: { size: 11 } }
+                    },
+                    y: {
+                        ticks: { color: '#8b949e', font: { size: 10 } },
+                        grid:  { color: 'rgba(255,255,255,0.05)' },
+                        beginAtZero: false,
+                        title: { display: true, text: yLabel,
+                                color: '#8b949e', font: { size: 11 } }
+                    }
                 },
-                animation: { duration: 0 }
-            }
-        });
-
-        const lossChart = new Chart(lossCtx, chartConfig('Loss Curve', 'Train', 'Val', '#ec4899', '#f472b6'));
-        const accChart = new Chart(accCtx, chartConfig('Accuracy Curve', 'Train', 'Val', '#10b981', '#34d399'));
-
-        let lastMetricCount = 0;
-
-        const updateUI = async () => {
-            try {
-                const res = await fetch('/training-status');
-                if (!res.ok) return;
-                const state = await res.json();
-                
-                document.getElementById('epoch-counter').innerText = `Epoch ${state.current_epoch} / ${state.total_epochs}`;
-                document.getElementById('arch-desc').innerText = `Architecture: ${state.architecture || "Unknown"}`;
-                
-                if (state.best_params && Object.keys(state.best_params).length > 0) {
-                    const bpStrings = Object.entries(state.best_params).map(([k,v]) => `${k}=${typeof v === 'number' ? v.toFixed(4).replace(/\.0000$/, '') : v}`);
-                    document.getElementById('best-params-desc').innerText = `Config: ${bpStrings.join(', ')}`;
-                }
-
-                if (state.groq_commentary) {
-                    document.getElementById('groq-text').innerText = state.groq_commentary;
-                }
-
-                if (state.metrics && state.metrics.length > lastMetricCount) {
-                    lastMetricCount = state.metrics.length;
-                    
-                    // Update Charts
-                    lossChart.data.labels = state.metrics.map(m => m.epoch);
-                    lossChart.data.datasets[0].data = state.metrics.map(m => m.loss);
-                    lossChart.data.datasets[1].data = state.metrics.map(m => m.val_loss);
-                    lossChart.update();
-                    
-                    accChart.data.labels = state.metrics.map(m => m.epoch);
-                    accChart.data.datasets[0].data = state.metrics.map(m => m.acc || m.loss); // fallback if no acc
-                    accChart.data.datasets[1].data = state.metrics.map(m => m.val_acc || m.val_loss);
-                    accChart.update();
-                    
-                    // Update Table
-                    let tableHTML = '';
-                    state.metrics.forEach(m => {
-                        tableHTML += `<tr>
-                            <td>${m.epoch}</td>
-                            <td>${m.loss?.toFixed(4) || '-'}</td>
-                            <td>${m.val_loss?.toFixed(4) || '-'}</td>
-                            <td>${m.acc?.toFixed(4) || '-'}</td>
-                            <td>${m.val_acc?.toFixed(4) || '-'}</td>
-                        </tr>`;
-                    });
-                    const tbody = document.getElementById('metrics-body');
-                    tbody.innerHTML = tableHTML;
-                    const scrollDiv = document.getElementById('metrics-scroll');
-                    scrollDiv.scrollTop = scrollDiv.scrollHeight;
-                }
-
-                // Logs
-                const logBox = document.getElementById('log-box');
-                if (state.logs && state.logs.length > 0) {
-                    const curLog = state.logs.map(l => `> ${l}`).join('<br>');
-                    if (logBox.innerHTML !== curLog) {
-                        logBox.innerHTML = curLog;
-                        logBox.scrollTop = logBox.scrollHeight;
+                plugins: {
+                    legend: {
+                        display: true,
+                        position: 'top',
+                        labels: { color: '#8b949e', font: { size: 10 }, boxWidth: 12, padding: 8 }
+                    },
+                    title: {
+                        display: true,
+                        text: title,
+                        color: '#e6edf3',
+                        font: { size: 13, weight: 'bold' },
+                        padding: { bottom: 6 }
                     }
                 }
-            } catch (e) {
-                console.error("Poll error", e);
+            });
+            
+            lossChart = new Chart(lossCtx, {
+                type: 'line',
+                data: {
+                    labels: [],
+                    datasets: [
+                        { label: 'Train Loss',
+                          data: [], borderColor: '#ec4899',
+                          borderWidth: 2, pointRadius: 3,
+                          backgroundColor: 'rgba(236,72,153,0.1)',
+                          tension: 0.4, fill: true },
+                        { label: 'Val Loss',
+                          data: [], borderColor: '#6366f1',
+                          borderWidth: 2, pointRadius: 3,
+                          backgroundColor: 'rgba(99,102,241,0.1)',
+                          borderDash: [4,4],
+                          tension: 0.4, fill: true },
+                    ]
+                },
+                options: makeOptions('Training Loss', 'Loss')
+            });
+            
+            accChart = new Chart(accCtx, {
+                type: 'line',
+                data: {
+                    labels: [],
+                    datasets: [
+                        { label: 'Train Acc',
+                          data: [], borderColor: '#10b981',
+                          borderWidth: 2, pointRadius: 3,
+                          backgroundColor: 'rgba(16,185,129,0.1)',
+                          tension: 0.4, fill: true },
+                        { label: 'Val Acc',
+                          data: [], borderColor: '#06b6d4',
+                          borderWidth: 2, pointRadius: 3,
+                          backgroundColor: 'rgba(6,182,212,0.1)',
+                          borderDash: [4,4],
+                          tension: 0.4, fill: true },
+                    ]
+                },
+                options: makeOptions('Accuracy (%)', 'Accuracy')
+            });
+        }
+
+        function updateCharts(metrics) {
+            if (!lossChart || !accChart) initCharts();
+            if (!metrics || metrics.length === 0) return;
+            
+            // Only add NEW epochs since last update
+            const newMetrics = metrics.filter(m => m.epoch > lastEpoch);
+            if (newMetrics.length === 0) return;
+            
+            newMetrics.forEach(m => {
+                const label = `E${m.epoch}`;
+                lossChart.data.labels.push(label);
+                lossChart.data.datasets[0].data.push(
+                    parseFloat(m.loss?.toFixed(4) || 0)
+                );
+                lossChart.data.datasets[1].data.push(
+                    parseFloat(m.val_loss?.toFixed(4) || 0)
+                );
+                accChart.data.labels.push(label);
+                accChart.data.datasets[0].data.push(
+                    parseFloat(((m.acc != null ? m.acc : 0) * 100).toFixed(2))
+                );
+                accChart.data.datasets[1].data.push(
+                    parseFloat(((m.val_acc != null ? m.val_acc : 0) * 100).toFixed(2))
+                );
+                lastEpoch = m.epoch;
+            });
+            
+            lossChart.update('none');
+            accChart.update('none');
+        }
+
+        function updateTable(metrics) {
+            if (!metrics) return;
+            let tableHTML = '';
+            metrics.forEach(m => {
+                tableHTML += `<tr>
+                    <td>${m.epoch}</td>
+                    <td>${m.loss?.toFixed(4) || '-'}</td>
+                    <td>${m.val_loss?.toFixed(4) || '-'}</td>
+                    <td>${m.acc?.toFixed(4) || '-'}</td>
+                    <td>${m.val_acc?.toFixed(4) || '-'}</td>
+                </tr>`;
+            });
+            const tbody = document.getElementById('metrics-body');
+            tbody.innerHTML = tableHTML;
+            const scrollDiv = document.getElementById('metrics-scroll');
+            scrollDiv.scrollTop = scrollDiv.scrollHeight;
+        }
+
+        function updateHeader(state) {
+            document.getElementById('epoch-counter').innerText = `Epoch ${state.current_epoch || 0} / ${state.total_epochs || 0}`;
+            document.getElementById('arch-desc').innerText = `Architecture: ${state.architecture || "Unknown"}`;
+            
+            if (state.best_params && Object.keys(state.best_params).length > 0) {
+                const bpStrings = Object.entries(state.best_params).map(([k,v]) => `${k}=${typeof v === 'number' ? v.toFixed(4).replace(/\.0000$/, '') : v}`);
+                document.getElementById('best-params-desc').innerText = `Config: ${bpStrings.join(', ')}`;
             }
-        };
-        setInterval(updateUI, 800);
-        updateUI();
+
+            if (state.groq_commentary) {
+                document.getElementById('groq-text').innerText = state.groq_commentary;
+            }
+        }
+
+        function updateLog(logs) {
+            const logBox = document.getElementById('log-box');
+            if (logs && logs.length > 0) {
+                const curLog = logs.map(l => `> ${l}`).join('<br>');
+                if (logBox.innerHTML !== curLog) {
+                    logBox.innerHTML = curLog;
+                    logBox.scrollTop = logBox.scrollHeight;
+                }
+            }
+        }
+
+        // Poll /training-status every 800ms
+        async function poll() {
+            try {
+                const res  = await fetch('/training-status');
+                const data = await res.json();
+                updateCharts(data.metrics || []);
+                updateTable(data.metrics || []);
+                updateHeader(data);
+                updateLog(data.logs || []);
+                if (data.status === 'complete' || 
+                    data.status === 'error') {
+                    if (pollTimer) clearInterval(pollTimer);
+                }
+            } catch(e) {}
+        }
+        
+        let pollTimer;
+        // Initialize charts immediately, start polling
+        document.addEventListener('DOMContentLoaded', () => {
+            initCharts();
+            pollTimer = setInterval(poll, 800);
+            poll(); // immediate first poll
+        });
     </script>
 </body>
 </html>

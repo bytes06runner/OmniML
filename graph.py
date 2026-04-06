@@ -122,6 +122,7 @@ class AgentState(TypedDict):
     retry_count:       int            # NEW: Loop limiter for debugger node
     metrics:           list           # NEW: List of epoch logs for real-time charting
     arxiv_benchmarks:  str            # NEW: Sprint 4 Literature comparator results
+    deployment_artifacts: Optional[dict] # NEW: Export paths (onnx, torchscript, weights, api script)
 
 
 # ─────────────────────────────────────────────
@@ -765,16 +766,85 @@ def _validate_and_fix_syntax(code: str, llm, max_attempts: int = 3) -> str:
 
 
 # ─────────────────────────────────────────────
-# 6b. Engineer Agent
+# 6b. Engineer Agent — DETERMINISTIC TEMPLATE
 # ─────────────────────────────────────────────
-def engineer_node(state: AgentState) -> dict:
-    import json
-    llm = get_llm(temperature=0.2)
-    final_graph = state.get("final_graph", {})
-    space = state.get("hpt_search_space", {})
-    tc = state.get("training_config") or {}
+def _build_model_class(graph_nodes):
+    """Build a PyTorch nn.Module class from the visual graph nodes."""
+    sorted_nodes = sorted(graph_nodes, key=lambda n: n.get("position", {}).get("y", 0))
 
-    # Human-defined hyperparameters (with defaults)
+    init_lines = []
+    forward_lines = []
+    layer_idx = 0
+    prev_dim = "input_dim"
+
+    for node in sorted_nodes:
+        d = node.get("data", {})
+        ntype = d.get("nodeType", "")
+        params = d.get("params", {})
+
+        if ntype == "Input":
+            continue  # input_dim handled externally
+        elif ntype == "Dense":
+            units = params.get("units", 128)
+            act   = params.get("activation", "relu")
+            init_lines.append(f"        self.fc{layer_idx} = nn.Linear({prev_dim}, {units})")
+            if act == "relu":
+                init_lines.append(f"        self.act{layer_idx} = nn.ReLU()")
+            elif act == "tanh":
+                init_lines.append(f"        self.act{layer_idx} = nn.Tanh()")
+            elif act == "selu":
+                init_lines.append(f"        self.act{layer_idx} = nn.SELU()")
+            else:
+                init_lines.append(f"        self.act{layer_idx} = nn.ReLU()")
+            forward_lines.append(f"        x = self.fc{layer_idx}(x)")
+            forward_lines.append(f"        x = self.act{layer_idx}(x)")
+            prev_dim = str(units)
+            layer_idx += 1
+        elif ntype == "BatchNorm1d":
+            init_lines.append(f"        self.bn{layer_idx} = nn.BatchNorm1d({prev_dim})")
+            forward_lines.append(f"        x = self.bn{layer_idx}(x)")
+            layer_idx += 1
+        elif ntype == "Dropout":
+            rate = params.get("rate", 0.3)
+            init_lines.append(f"        self.drop{layer_idx} = nn.Dropout({rate})")
+            forward_lines.append(f"        x = self.drop{layer_idx}(x)")
+            layer_idx += 1
+        elif ntype == "Output":
+            # Always use num_classes for CrossEntropyLoss compatibility
+            init_lines.append(f"        self.output_layer = nn.Linear({prev_dim}, num_classes)")
+            forward_lines.append(f"        x = self.output_layer(x)")
+            prev_dim = "num_classes"
+
+    if not init_lines:
+        # Fallback: simple 2-layer net
+        init_lines = [
+            "        self.fc0 = nn.Linear(input_dim, 128)",
+            "        self.act0 = nn.ReLU()",
+            "        self.drop0 = nn.Dropout(0.3)",
+            "        self.fc1 = nn.Linear(128, 64)",
+            "        self.act1 = nn.ReLU()",
+            "        self.output_layer = nn.Linear(64, num_classes)",
+        ]
+        forward_lines = [
+            "        x = self.fc0(x)",
+            "        x = self.act0(x)",
+            "        x = self.drop0(x)",
+            "        x = self.fc1(x)",
+            "        x = self.act1(x)",
+            "        x = self.output_layer(x)",
+        ]
+
+    return "\n".join(init_lines), "\n".join(forward_lines)
+
+
+def engineer_node(state: AgentState) -> dict:
+    """Deterministic template-based script generator. No LLM truncation risk."""
+    import json
+
+    final_graph = state.get("final_graph", {})
+    tc = state.get("training_config") or {}
+    csv_path    = state.get("dataset_csv_path", "train.csv")
+
     epochs      = int(tc.get("epochs", 50))
     test_size   = float(tc.get("test_size", 0.2))
     batch_size  = int(tc.get("batch_size", 64))
@@ -787,98 +857,303 @@ def engineer_node(state: AgentState) -> dict:
     seed        = int(tc.get("seed", 42))
     patience    = max(10, epochs // 5)
 
-    if not final_graph.get("nodes"):
+    graph_nodes = final_graph.get("nodes", [])
+    if not graph_nodes:
         return {**state, "generated_code": None}
 
-    # NOTE: Use NO single-quotes around optimizer value to prevent LLM from
-    # echoing the quote character into generated code (causes SyntaxError).
-    sys_prompt = textwrap.dedent(f"""
-        You are an elite PyTorch Engineer.
-        Generate a single monolithic Python script for hyperparameter tuning and training.
-        Output ONLY raw Python — no markdown fences, no triple-backticks, no explanation.
+    init_block, forward_block = _build_model_class(graph_nodes)
 
-        GRAPH TOPOLOGY JSON: {json.dumps(final_graph)}
-        OPTUNA SEARCH SPACE: {json.dumps(space)}
+    script = f'''import json
+import random
+import numpy as np
+import pandas as pd
+import torch
+import torch.nn as nn
+from torch.utils.data import TensorDataset, DataLoader
+from sklearn.model_selection import train_test_split
+from sklearn.utils.class_weight import compute_class_weight
+import optuna
+optuna.logging.set_verbosity(optuna.logging.WARNING)
 
-        EXACT HYPERPARAMETER VALUES — hard-code these into the script directly:
-        NUM_EPOCHS   = {epochs}
-        TEST_SIZE    = {test_size}
-        BATCH_SIZE   = {batch_size}
-        OPTIMIZER    = "{optimizer}"
-        LR           = {lr}
-        EARLY_STOP   = {str(early_stop).lower()}
-        DROPOUT      = {str(dropout).lower()}
-        CLASS_WEIGHTS= {str(class_wts).lower()}
-        HPT_TRIALS   = {hpt_trials}
-        SEED         = {seed}
+# === User-defined settings ===
+CSV_PATH      = "{csv_path}"
+NUM_EPOCHS    = {epochs}
+TEST_SIZE     = {test_size}
+BATCH_SIZE    = {batch_size}
+LR            = {lr}
+HPT_TRIALS    = {hpt_trials}
+SEED          = {seed}
+USE_EARLY_STOP = {early_stop}
+USE_DROPOUT    = {dropout}
+USE_CLASS_WTS  = {class_wts}
+PATIENCE       = {patience}
 
-        REQUIREMENTS — follow exactly:
-        1. Load CSV from "{state.get('dataset_csv_path', 'train.csv')}" (use the variable CSV_PATH = "<path>").
-        2. Preprocessing IN THIS ORDER:
-           a. df = pd.read_csv(CSV_PATH)
-           b. df = df.drop(columns=[c for c in df.columns if df[c].isnull().mean() > 0.5])
-           c. df = df.select_dtypes(include=["number"])
-           d. df = df.dropna()
-           e. if len(df) == 0: raise RuntimeError("DataFrame is empty after preprocessing")
-           f. X = df.iloc[:, :-1].values.astype(np.float32)
-           g. y = df.iloc[:, -1].values
-           h. X_train, X_val, y_train, y_val = train_test_split(X, y, test_size={test_size}, random_state={seed})
-        3. Build PyTorch model matching the graph topology. Set input_dim = X_train.shape[1].
-        4. Run Optuna (n_trials={hpt_trials}, seed={seed}) to find the best hyperparameters. Train for EXACTLY 3 epochs during Optuna trials to save time. DO NOT print any epoch_metric during Optuna. Per trial print:
-           print(json.dumps({{"type":"hpt_trial","trial":t.number,"total":{hpt_trials},"params":t.params,"value":float(v),"status":"complete","best_so_far":float(s)}}), flush=True)
-        5. After HPT print:
-           print(json.dumps({{"type":"hpt_complete","best_params":best_params,"best_value":float(best_val),"total_trials":{hpt_trials}}}), flush=True)
-        6. VERY IMPORTANT: You MUST train a FINAL model using the `best_params` from Optuna. Train this final model for EXACTLY NUM_EPOCHS epochs outside of Optuna. You MUST use exactly this loop: `for epoch in range(NUM_EPOCHS):`. DO NOT USE Optuna inside this final loop!
-           {f'Use early stopping with patience={patience} during final training.' if early_stop else ''}
-        7. During the FINAL training loop ONLY, each epoch print:
-           print(json.dumps({{"type":"epoch_metric","epoch":epoch+1,"loss":float(loss),"val_loss":float(vloss),"acc":float(acc),"val_acc":float(vacc)}}), flush=True)
-        8. Do NOT use any f-strings or string formatting that references undefined variables.
-        9. Every string literal must be properly closed on the same line.
-    """).strip()
+random.seed(SEED)
+np.random.seed(SEED)
+torch.manual_seed(SEED)
 
-    response = llm.invoke(sys_prompt)
-    generated_code = _strip_code_fences(response.content)
-    # Validate & auto-fix syntax before storing
-    generated_code = _validate_and_fix_syntax(generated_code, llm)
-    return {"generated_code": generated_code, "retry_count": 0, "training_logs": "", "metrics": []}
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+# === Data loading & preprocessing ===
+df = pd.read_csv(CSV_PATH)
+
+# Drop columns that are mostly null
+df = df.drop(columns=[c for c in df.columns if df[c].isnull().mean() > 0.5])
+
+# Auto-detect target column:
+# 1. Find the column with fewest unique values (likely categorical target)
+# 2. Exclude ID-like columns (all unique values)
+from sklearn.preprocessing import LabelEncoder
+
+# Identify the target: lowest cardinality column that isn't an ID
+candidates = []
+for col in df.columns:
+    nunique = df[col].nunique()
+    if nunique < 1:
+        continue  # skip empty columns
+    if nunique == len(df):
+        continue  # skip ID-like columns (all unique)
+    candidates.append((col, nunique))
+
+if candidates:
+    # Pick the column with fewest unique values (likely the target)
+    candidates.sort(key=lambda x: x[1])
+    target_col = candidates[0][0]
+else:
+    target_col = df.columns[-1]
+
+# Extract target before dropping non-numeric columns
+y_raw = df[target_col].copy()
+df = df.drop(columns=[target_col])
+
+# Keep only numeric features
+df = df.select_dtypes(include=["number"])
+# Drop ID-like columns (all unique integer values)
+id_cols = [c for c in df.columns if df[c].nunique() == len(df)]
+if id_cols:
+    df = df.drop(columns=id_cols)
+df = df.dropna()
+if len(df) == 0:
+    raise RuntimeError("DataFrame empty after preprocessing")
+
+# Align y with remaining rows
+y_raw = y_raw.loc[df.index]
+
+# Label-encode target to integers
+try:
+    y = y_raw.values.astype(np.float64).astype(np.int64)
+except (ValueError, TypeError):
+    le = LabelEncoder()
+    y = le.fit_transform(y_raw.astype(str).values)
+
+X = df.values.astype(np.float32)
+num_classes = len(np.unique(y))
+print(f"Dataset: {{X.shape[0]}} samples, {{X.shape[1]}} features, {{num_classes}} classes, target='{{target_col}}'", flush=True)
+
+X_train, X_val, y_train_np, y_val_np = train_test_split(
+    X, y, test_size=TEST_SIZE, random_state=SEED
+)
+input_dim = X_train.shape[1]
+
+y_train_t = torch.tensor(y_train_np, dtype=torch.long).to(device)
+y_val_t   = torch.tensor(y_val_np, dtype=torch.long).to(device)
+X_train_t = torch.tensor(X_train, dtype=torch.float32).to(device)
+X_val_t   = torch.tensor(X_val, dtype=torch.float32).to(device)
+
+class_weights_tensor = None
+if USE_CLASS_WTS:
+    cw = compute_class_weight("balanced", classes=np.unique(y_train_np), y=y_train_np)
+    class_weights_tensor = torch.tensor(cw, dtype=torch.float32).to(device)
+
+train_ds = TensorDataset(X_train_t, y_train_t)
+val_ds   = TensorDataset(X_val_t, y_val_t)
+train_loader = DataLoader(train_ds, batch_size=BATCH_SIZE, shuffle=True)
+val_loader   = DataLoader(val_ds, batch_size=BATCH_SIZE, shuffle=False)
+
+# === Model ===
+class Net(nn.Module):
+    def __init__(self, input_dim, num_classes):
+        super().__init__()
+{init_block}
+
+    def forward(self, x):
+{forward_block}
+        return x
+
+# === Optuna HPT ===
+def objective(trial):
+    model = Net(input_dim, num_classes).to(device)
+    trial_lr = trial.suggest_float("lr", 1e-5, 1e-2, log=True)
+    opt = torch.optim.Adam(model.parameters(), lr=trial_lr)
+    loss_fn = nn.CrossEntropyLoss(weight=class_weights_tensor)
+    model.train()
+    for _ in range(3):
+        for xb, yb in train_loader:
+            opt.zero_grad()
+            loss = loss_fn(model(xb), yb)
+            loss.backward()
+            opt.step()
+    model.eval()
+    val_loss = 0.0
+    count = 0
+    with torch.no_grad():
+        for xb, yb in val_loader:
+            val_loss += loss_fn(model(xb), yb).item() * len(xb)
+            count += len(xb)
+    avg_val = val_loss / max(count, 1)
+    try:
+        best_so_far = trial.study.best_value
+    except ValueError:
+        best_so_far = avg_val
+    print(json.dumps({{"type": "hpt_trial", "trial": trial.number, "total": HPT_TRIALS,
+                       "params": {{"lr": trial_lr}}, "value": avg_val,
+                       "status": "complete", "best_so_far": best_so_far}}), flush=True)
+    return avg_val
+
+study = optuna.create_study(direction="minimize")
+study.optimize(objective, n_trials=HPT_TRIALS)
+best_params = study.best_trial.params
+best_val    = study.best_value
+print(json.dumps({{"type": "hpt_complete", "best_params": best_params,
+                   "best_value": best_val, "total_trials": HPT_TRIALS}}), flush=True)
+
+# === Final training ===
+final_lr = best_params.get("lr", LR)
+model = Net(input_dim, num_classes).to(device)
+optimizer = torch.optim.{"Adam" if optimizer == "adam" else "SGD" if optimizer == "sgd" else "RMSprop"}(model.parameters(), lr=final_lr)
+loss_fn = nn.CrossEntropyLoss(weight=class_weights_tensor)
+
+best_val_loss = float("inf")
+epochs_no_improve = 0
+
+for epoch in range(NUM_EPOCHS):
+    # -- Train --
+    model.train()
+    train_loss_sum = 0.0
+    correct_train = 0
+    total_train = 0
+    for xb, yb in train_loader:
+        optimizer.zero_grad()
+        logits = model(xb)
+        loss = loss_fn(logits, yb)
+        loss.backward()
+        optimizer.step()
+        train_loss_sum += loss.item() * len(xb)
+        preds = torch.argmax(logits, dim=1)
+        correct_train += (preds == yb).sum().item()
+        total_train += len(yb)
+
+    avg_train_loss = train_loss_sum / max(total_train, 1)
+    train_acc = correct_train / max(total_train, 1)
+
+    # -- Validate --
+    model.eval()
+    val_loss_sum = 0.0
+    correct_val = 0
+    total_val = 0
+    with torch.no_grad():
+        for xb, yb in val_loader:
+            logits = model(xb)
+            loss = loss_fn(logits, yb)
+            val_loss_sum += loss.item() * len(xb)
+            preds = torch.argmax(logits, dim=1)
+            correct_val += (preds == yb).sum().item()
+            total_val += len(yb)
+
+    avg_val_loss = val_loss_sum / max(total_val, 1)
+    val_acc = correct_val / max(total_val, 1)
+
+    # -- Emit epoch metric (CRITICAL for live charts) --
+    print(json.dumps({{"type": "epoch_metric", "epoch": epoch + 1,
+                       "loss": round(avg_train_loss, 6), "val_loss": round(avg_val_loss, 6),
+                       "acc": round(train_acc, 6), "val_acc": round(val_acc, 6)}}), flush=True)
+
+    # -- Early stopping --
+    if USE_EARLY_STOP:
+        if avg_val_loss < best_val_loss:
+            best_val_loss = avg_val_loss
+            epochs_no_improve = 0
+        else:
+            epochs_no_improve += 1
+            if epochs_no_improve >= PATIENCE:
+                break
+
+print("Training complete. Final val_acc:", round(val_acc, 4))
+
+# ═══════════════════════════════════════════════
+# MODEL EXPORT — ONNX, TorchScript, Weights
+# ═══════════════════════════════════════════════
+import os as _os
+_export_dir = _os.path.join(_os.getcwd(), "exports")
+_os.makedirs(_export_dir, exist_ok=True)
+
+# 1. Save PyTorch weights
+_pt_path = _os.path.join(_export_dir, "model.pt")
+torch.save(model.state_dict(), _pt_path)
+print(json.dumps({{"type": "export_step", "step": "weights", "path": _pt_path}}), flush=True)
+
+# 2. Export ONNX
+try:
+    _dummy = torch.randn(1, input_dim).to(device)
+    _onnx_path = _os.path.join(_export_dir, "model.onnx")
+    torch.onnx.export(
+        model, _dummy, _onnx_path,
+        input_names=["features"],
+        output_names=["logits"],
+        dynamic_axes={{"features": {{0: "batch"}}, "logits": {{0: "batch"}}}},
+        opset_version=17,
+    )
+    print(json.dumps({{"type": "export_step", "step": "onnx", "path": _onnx_path}}), flush=True)
+except Exception as _e:
+    print(json.dumps({{"type": "export_step", "step": "onnx", "error": str(_e)}}), flush=True)
+
+# 3. Export TorchScript
+try:
+    _scripted = torch.jit.script(model)
+    _ts_path = _os.path.join(_export_dir, "model_scripted.pt")
+    _scripted.save(_ts_path)
+    print(json.dumps({{"type": "export_step", "step": "torchscript", "path": _ts_path}}), flush=True)
+except Exception as _e:
+    # Fallback: use tracing instead of scripting
+    try:
+        _traced = torch.jit.trace(model, torch.randn(1, input_dim).to(device))
+        _ts_path = _os.path.join(_export_dir, "model_scripted.pt")
+        _traced.save(_ts_path)
+        print(json.dumps({{"type": "export_step", "step": "torchscript", "path": _ts_path}}), flush=True)
+    except Exception as _e2:
+        print(json.dumps({{"type": "export_step", "step": "torchscript", "error": str(_e2)}}), flush=True)
+
+# 4. Save metadata
+_feature_names = [c for c in df.columns] if hasattr(df, 'columns') else [f"f{{i}}" for i in range(input_dim)]
+_meta = {{
+    "input_dim": input_dim,
+    "num_classes": num_classes,
+    "target_col": target_col,
+    "feature_names": _feature_names,
+    "final_val_acc": round(val_acc, 6),
+    "final_val_loss": round(avg_val_loss, 6),
+    "epochs_trained": epoch + 1,
+    "csv_path": CSV_PATH,
+}}
+_meta_path = _os.path.join(_export_dir, "model_meta.json")
+with open(_meta_path, "w") as _mf:
+    json.dump(_meta, _mf, indent=2, default=str)
+print(json.dumps({{"type": "export_complete", "export_dir": _export_dir, "meta": _meta}}), flush=True)
+'''
+
+    return {"generated_code": script, "retry_count": 0, "training_logs": "", "metrics": []}
+
 
 # ─────────────────────────────────────────────
-# 6c. Groq Loopfixer
+# 6c. Groq Loopfixer — now a pass-through
+#     (deterministic template doesn't need fixing)
 # ─────────────────────────────────────────────
 def groq_loopfixer_node(state: AgentState) -> dict:
     script = state.get("generated_code", "")
-    if not script: return {}
-
-    llm = get_llm(temperature=0.0)
-    prompt = textwrap.dedent(f"""
-    You are a senior ML engineer performing a pre-flight code review.
-    Fix ALL of the following issues in the script:
-    1. Any column that cannot be cast to float32 (datetime, string, object) — add df.select_dtypes(include=["number"])
-    2. Any hardcoded input_dim that doesn't match the actual CSV columns — replace with: input_dim = X_train.shape[1]
-    3. Missing train/val split — add sklearn train_test_split.
-    4. Missing epoch metric emission — every epoch of the FINAL model training loop (NOT Optuna trials) MUST print JSON line epoch_metric exactly.
-    5. Class imbalance — if binary/multi classification, compute and apply class_weights.
-    6. NaN in target or features — MANDATORY preprocessing before split:
-         df = df.drop(columns=[c for c in df.columns if df[c].isnull().mean() > 0.5])
-         df = df.select_dtypes(include=["number"])
-         df = df.dropna()
-         if len(df) == 0: raise RuntimeError("DataFrame empty after preprocessing")
-    7. Ensure y is cast correctly: long (torch.long) for classification, float32 for regression.
-    8. Fix any syntax errors — every string literal must be properly closed, no unterminated strings.
-    9. Remove any markdown fences or triple-backtick lines.
-
-    Return ONLY the corrected raw Python script. No markdown fences. No explanation.
-
-    SCRIPT TO REVIEW:
-    {script}
-    """).strip()
-
-    res = llm.invoke(prompt)
-    fixed = _strip_code_fences(res.content)
-    # Always validate syntax after loopfixer repairs
-    fixed = _validate_and_fix_syntax(fixed, llm)
-
-    return {"groq_fixed_code": fixed}
+    if not script:
+        return {}
+    # Template-generated code is always valid — pass through directly
+    return {"groq_fixed_code": script}
 
 # ─────────────────────────────────────────────
 # 7.  Execution Sandbox
@@ -918,6 +1193,8 @@ async def execution_sandbox_node(state: AgentState) -> dict:
             print(f"[sandbox] {err}")
             return {**state, "training_logs": err, "metrics": []}
 
+
+
     print("[sandbox] 💻 Local mode selected. Subprocess streaming enabled...")
     stdout_lines = []
     
@@ -943,42 +1220,55 @@ async def execution_sandbox_node(state: AgentState) -> dict:
             c = _strip_code_fences(llm.invoke(p).content)
             training_state["groq_commentary"] = c
 
+        import json as _json
         metrics_list = []
         while True:
             line = await process.stdout.readline()
             if not line:
                 break
             
-            decoded_line = line.decode('utf-8', errors='ignore').strip()
-            stdout_lines.append(decoded_line)
+            raw = line.decode('utf-8', errors='ignore').strip()
+            if not raw:
+                continue
+            
+            stdout_lines.append(raw)
+            if len(stdout_lines) > 5000:
+                stdout_lines = stdout_lines[-5000:]
+            
+            training_state["logs"].append(raw)
+            if len(training_state["logs"]) > 50:
+                training_state["logs"] = training_state["logs"][-50:]
             
             try:
-                j = json.loads(decoded_line)
-                t = j.get("type", "")
-                if t == "hpt_trial":
-                    hpt_state["current_trial"] = j.get("trial", 0)
-                    hpt_state["total_trials"] = j.get("total", 15)
-                    hpt_state["best_value"] = j.get("best_so_far", 0.0)
-                    hpt_state["current_params"] = j.get("params", {})
-                    hpt_state["trials"].append(j)
-                    hpt_state["logs"] = stdout_lines[-20:]
-                elif t == "hpt_complete":
-                    hpt_state["status"] = "complete"
-                    hpt_state["best_params"] = j.get("best_params", {})
-                    training_state["best_params"] = j.get("best_params", {})
-                elif t == "epoch_metric":
-                    training_state["current_epoch"] = j.get("epoch", 0)
-                    metrics_list.append(j)
+                parsed = _json.loads(raw)
+                t = parsed.get("type", "")
+                if t == "epoch_metric":
+                    metric = {
+                        "epoch":    int(parsed.get("epoch", 0)),
+                        "loss":     float(parsed.get("loss", 0)),
+                        "val_loss": float(parsed.get("val_loss", 0)),
+                        "acc":      float(parsed.get("acc", 0)),
+                        "val_acc":  float(parsed.get("val_acc", 0)),
+                    }
+                    metrics_list.append(metric)
                     training_state["metrics"] = metrics_list
-                    training_state["architecture"] = state.get("architecture_desc", "")
-                    training_state["logs"] = stdout_lines[-20:]
+                    training_state["current_epoch"] = metric["epoch"]
                     
                     if len(metrics_list) % 5 == 0:
                         asyncio.create_task(fetch_commentary(metrics_list[-5:]))
-            except json.JSONDecodeError:
-                if hpt_state["status"] != "complete": 
-                    hpt_state["logs"] = stdout_lines[-20:]
-                training_state["logs"] = stdout_lines[-20:]
+                elif t == "hpt_trial":
+                    hpt_state["current_trial"] = int(parsed.get("trial", 0))
+                    hpt_state["total_trials"] = parsed.get("total", 15)
+                    hpt_state["best_value"] = float(parsed.get("best_so_far", 0.0))
+                    hpt_state["current_params"] = parsed.get("params", {})
+                    hpt_state["trials"].append(parsed)
+                    hpt_state["logs"].append(f"> Trial {parsed.get('trial')} complete: value={parsed.get('value', 0):.4f}")
+                elif t == "hpt_complete":
+                    hpt_state["status"] = "complete"
+                    hpt_state["best_params"] = parsed.get("best_params", {})
+                    training_state["best_params"] = parsed.get("best_params", {})
+            except (_json.JSONDecodeError, ValueError, TypeError):
+                pass
         
         await process.wait()
         logs = "\\n".join(stdout_lines[-5000:])
@@ -999,35 +1289,43 @@ def debugger_node(state: AgentState) -> dict:
     Reads the Traceback from training_logs and the crashed generated_code.
     Ask the LLM to patch it.
     """
+    import json
     llm = get_llm(temperature=0.0)
     
-    prompt = textwrap.dedent(f"""
-        You are an elite autonomous debugging agent.
-        The previous training script crashed with the following error:
-        
-        === TRACEBACK ===
-        {state.get("training_logs", "")}
-        
-        === CODE ===
-        {state.get("generated_code", "")}
-        
-        === REQUIRED CONFIGURATION (DO NOT CHANGE) ===
-        {json.dumps(state.get("training_config", {}), indent=2)}
-        
-        Fix the python script to resolve this error entirely. 
-        MANDATORY: 
-        1. Maintain all imports and the data loading logic.
-        2. Do NOT change the user's desired hyperparameters (Epochs, Optimizer, etc.) unless specifically requested by the error (e.g. out of memory).
-        3. Do NOT use markdown code fences. Output ONLY the raw Python code.
-    """).strip()
+    logs     = state.get("training_logs", "")
+    code     = state.get("generated_code", "")
+    tc       = state.get("training_config") or {}
+    
+    # Truncate logs to last 3000 chars to avoid exceeding context
+    logs_tail = logs[-3000:] if len(logs) > 3000 else logs
+    # Truncate code context too
+    code_tail = code[-6000:] if len(code) > 6000 else code
+    
+    prompt = (
+        "You are an elite autonomous debugging agent.\n"
+        "The previous training script crashed. Fix it COMPLETELY.\n\n"
+        "=== ERROR (last 3000 chars) ===\n" + logs_tail + "\n\n"
+        "=== SCRIPT ===\n" + code_tail + "\n\n"
+        "=== TRAINING CONFIG ===\n" + json.dumps(tc, indent=2) + "\n\n"
+        "MANDATORY RULES:\n"
+        "1. Output ONLY raw Python. No markdown. No explanation.\n"
+        "2. The script MUST be COMPLETE — no truncation. It must end with a valid statement.\n"
+        "3. Keep all imports and data loading.\n"
+        "4. The final training loop MUST emit epoch_metric JSON per epoch:\n"
+        '   print(json.dumps({"type": "epoch_metric", "epoch": epoch+1, "loss": float(train_loss), "val_loss": float(val_loss), "acc": float(train_acc), "val_acc": float(val_acc)}), flush=True)\n'
+        "5. Do NOT change the user hyperparameters.\n"
+    )
     
     response = llm.invoke(prompt)
     new_code = _strip_code_fences(response.content)
+    new_code = _validate_and_fix_syntax(new_code, llm)
     
+    
+
     return {
         "generated_code": new_code,
         "retry_count": state.get("retry_count", 0) + 1,
-        "training_logs": "" # Reset logs for the retry
+        "training_logs": ""
     }
 
 
@@ -1087,6 +1385,191 @@ def arxiv_comparator_node(state: AgentState) -> dict:
     arxiv_markdown = comp_response.content
     
     return {"arxiv_benchmarks": arxiv_markdown}
+
+
+# ─────────────────────────────────────────────
+# 8d½. Model Deployer — Export + API Generation
+# ─────────────────────────────────────────────
+def model_deployer_node(state: AgentState) -> dict:
+    """
+    Generates production deployment artifacts from the trained model exports:
+    - FastAPI inference script (using ONNX Runtime)
+    - Dockerfile
+    - requirements.txt
+    """
+    import os, json
+
+    export_dir = os.path.join(os.getcwd(), "exports")
+    meta_path  = os.path.join(export_dir, "model_meta.json")
+
+    # Read model metadata
+    if not os.path.exists(meta_path):
+        print("[deployer] ⚠️  No model_meta.json found — skipping deployment generation")
+        return {"deployment_artifacts": None}
+
+    with open(meta_path) as f:
+        meta = json.load(f)
+
+    input_dim     = meta.get("input_dim", 1)
+    num_classes   = meta.get("num_classes", 2)
+    feature_names = meta.get("feature_names", [f"f{i}" for i in range(input_dim)])
+    target_col    = meta.get("target_col", "target")
+    val_acc       = meta.get("final_val_acc", 0.0)
+
+    # — 1. Generate FastAPI inference script —
+    example_payload = ", ".join([f'"{fn}": 0.0' for fn in feature_names[:6]])
+    if len(feature_names) > 6:
+        example_payload += ", ..."
+
+    api_script = f'''"""
+OmniML Inference API — Auto-Generated
+======================================
+Serves predictions via ONNX Runtime for maximum speed.
+Model: {target_col} classifier ({num_classes} classes, {input_dim} features)
+Validation accuracy: {val_acc:.4f}
+
+Start:  uvicorn serve_api:app --host 0.0.0.0 --port 8080
+Test:   curl -X POST http://localhost:8080/predict -H "Content-Type: application/json" -d '{{"features": [0.0, ...]}}'
+"""
+import os
+import json
+import numpy as np
+import onnxruntime as ort
+from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
+from typing import List
+
+app = FastAPI(
+    title="OmniML Inference API",
+    description="Auto-generated model serving endpoint",
+    version="1.0.0",
+)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# Load ONNX model
+MODEL_PATH = os.path.join(os.path.dirname(__file__), "model.onnx")
+session = ort.InferenceSession(MODEL_PATH)
+input_name = session.get_inputs()[0].name
+
+FEATURE_NAMES = {json.dumps(feature_names)}
+NUM_CLASSES = {num_classes}
+INPUT_DIM = {input_dim}
+
+
+class PredictRequest(BaseModel):
+    features: List[float]
+
+    class Config:
+        json_schema_extra = {{
+            "example": {{"features": [0.0] * min(input_dim, 10)}}
+        }}
+
+
+class PredictResponse(BaseModel):
+    predicted_class: int
+    confidence: float
+    probabilities: List[float]
+
+
+@app.get("/health")
+def health():
+    return {{"status": "ok", "model": "onnx", "input_dim": INPUT_DIM, "num_classes": NUM_CLASSES}}
+
+
+@app.get("/meta")
+def model_meta():
+    return {{
+        "feature_names": FEATURE_NAMES,
+        "input_dim": INPUT_DIM,
+        "num_classes": NUM_CLASSES,
+    }}
+
+
+@app.post("/predict", response_model=PredictResponse)
+def predict(req: PredictRequest):
+    if len(req.features) != INPUT_DIM:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Expected {{INPUT_DIM}} features, got {{len(req.features)}}"
+        )
+
+    x = np.array([req.features], dtype=np.float32)
+    logits = session.run(None, {{input_name: x}})[0][0]
+
+    # Softmax
+    exp_logits = np.exp(logits - np.max(logits))
+    probs = exp_logits / exp_logits.sum()
+
+    pred_class = int(np.argmax(probs))
+    confidence = float(probs[pred_class])
+
+    return PredictResponse(
+        predicted_class=pred_class,
+        confidence=round(confidence, 6),
+        probabilities=[round(float(p), 6) for p in probs],
+    )
+
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=8080)
+'''
+
+    api_path = os.path.join(export_dir, "serve_api.py")
+    with open(api_path, "w") as f:
+        f.write(api_script)
+    print(f"[deployer] ✅ FastAPI script → {api_path}")
+
+    # — 2. Generate requirements.txt —
+    reqs = """fastapi>=0.104.0
+uvicorn>=0.24.0
+onnxruntime>=1.16.0
+numpy>=1.24.0
+pydantic>=2.0.0
+"""
+    reqs_path = os.path.join(export_dir, "requirements.txt")
+    with open(reqs_path, "w") as f:
+        f.write(reqs)
+
+    # — 3. Generate Dockerfile —
+    dockerfile = """FROM python:3.11-slim
+
+WORKDIR /app
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+COPY model.onnx .
+COPY model_meta.json .
+COPY serve_api.py .
+
+EXPOSE 8080
+CMD ["uvicorn", "serve_api:app", "--host", "0.0.0.0", "--port", "8080"]
+"""
+    df_path = os.path.join(export_dir, "Dockerfile")
+    with open(df_path, "w") as f:
+        f.write(dockerfile)
+
+    print(f"[deployer] ✅ Dockerfile → {df_path}")
+    print(f"[deployer] ✅ requirements.txt → {reqs_path}")
+
+    artifacts = {
+        "export_dir":    export_dir,
+        "weights_path":  os.path.join(export_dir, "model.pt"),
+        "onnx_path":     os.path.join(export_dir, "model.onnx"),
+        "torchscript_path": os.path.join(export_dir, "model_scripted.pt"),
+        "api_path":      api_path,
+        "dockerfile":    df_path,
+        "requirements":  reqs_path,
+        "meta":          meta,
+    }
+    return {"deployment_artifacts": artifacts}
 
 
 # ─────────────────────────────────────────────
@@ -1266,15 +1749,20 @@ def evaluator_node(state: AgentState) -> dict:
 
 def check_execution_success(state: AgentState) -> str:
     """
-    Checks if local execution produced a traceback, routing to debugger if so. 
+    Checks if local execution produced a real crash, routing to debugger if so. 
     Respects a maximum of 3 retries.
+    Only triggers on actual Python tracebacks, not incidental 'Error' in log text.
     """
     logs = state.get("training_logs", "")
     retries = state.get("retry_count", 0)
     mode = state.get("execution_mode", "local")
     
-    if mode == "local" and ("Traceback" in logs or "Error" in logs or "Exception" in logs):
-        if retries < 3:
+    if mode == "local" and retries < 3:
+        # Only trigger debugger for actual Python tracebacks
+        if "Traceback (most recent call last)" in logs:
+            return "debugger"
+        # Also catch SyntaxError at top level
+        if logs.strip().startswith("SyntaxError") or "\nSyntaxError" in logs:
             return "debugger"
             
     return "arxiv_comparator"
@@ -1305,6 +1793,7 @@ def build_graph() -> StateGraph:
     graph.add_node("execution_sandbox",  execution_sandbox_node)
     graph.add_node("debugger",           debugger_node)
     graph.add_node("arxiv_comparator",   arxiv_comparator_node)
+    graph.add_node("model_deployer",     model_deployer_node)
     graph.add_node("evaluator",          evaluator_node)
 
     graph.set_entry_point("architect")
@@ -1329,7 +1818,8 @@ def build_graph() -> StateGraph:
     
     graph.add_conditional_edges("execution_sandbox", check_execution_success, {"debugger": "debugger", "arxiv_comparator": "arxiv_comparator"})
     graph.add_edge("debugger",           "execution_sandbox")
-    graph.add_edge("arxiv_comparator",   "evaluator")
+    graph.add_edge("arxiv_comparator",   "model_deployer")
+    graph.add_edge("model_deployer",     "evaluator")
     graph.add_edge("evaluator",          END)
 
     from langgraph.checkpoint.memory import MemorySaver

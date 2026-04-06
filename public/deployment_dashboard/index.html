@@ -1,0 +1,398 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>OmniML — Deployment Dashboard</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
+        
+        body {
+            background: #0a0a0f;
+            color: #e0e0e8;
+            font-family: 'Inter', sans-serif;
+            padding: 24px;
+            min-height: 100vh;
+        }
+
+        .header {
+            display: flex;
+            align-items: center;
+            gap: 14px;
+            margin-bottom: 28px;
+        }
+        .header .icon {
+            width: 44px; height: 44px;
+            background: linear-gradient(135deg, #10b981, #06d6a0);
+            border-radius: 12px;
+            display: flex; align-items: center; justify-content: center;
+            font-size: 22px;
+        }
+        .header h1 {
+            font-size: 22px;
+            font-weight: 700;
+            background: linear-gradient(90deg, #10b981, #3b82f6);
+            background-clip: text;
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+        .header .badge {
+            background: rgba(16, 185, 129, 0.15);
+            color: #10b981;
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 11px;
+            font-weight: 600;
+            letter-spacing: 0.5px;
+        }
+
+        .grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 18px;
+            margin-bottom: 24px;
+        }
+
+        .card {
+            background: rgba(255,255,255,0.03);
+            border: 1px solid rgba(255,255,255,0.06);
+            border-radius: 14px;
+            padding: 20px;
+            transition: border-color 0.3s;
+        }
+        .card:hover {
+            border-color: rgba(16, 185, 129, 0.3);
+        }
+        .card h3 {
+            font-size: 13px;
+            font-weight: 600;
+            color: #8b8b9e;
+            text-transform: uppercase;
+            letter-spacing: 0.8px;
+            margin-bottom: 14px;
+        }
+
+        /* Export status */
+        .export-list {
+            list-style: none;
+        }
+        .export-list li {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 10px 0;
+            border-bottom: 1px solid rgba(255,255,255,0.04);
+        }
+        .export-list li:last-child { border: none; }
+        .export-list .name {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .export-list .icon-check {
+            width: 22px; height: 22px;
+            border-radius: 50%;
+            display: flex; align-items: center; justify-content: center;
+            font-size: 12px;
+        }
+        .icon-check.ok {
+            background: rgba(16,185,129,0.15);
+            color: #10b981;
+        }
+        .icon-check.fail {
+            background: rgba(239,68,68,0.15);
+            color: #ef4444;
+        }
+        .icon-check.pending {
+            background: rgba(234,179,8,0.15);
+            color: #eab308;
+        }
+        .export-list .size {
+            font-size: 12px;
+            color: #6b6b7e;
+            font-family: 'JetBrains Mono', monospace;
+        }
+        .download-btn {
+            background: rgba(59,130,246,0.12);
+            color: #3b82f6;
+            border: 1px solid rgba(59,130,246,0.2);
+            border-radius: 8px;
+            padding: 5px 12px;
+            font-size: 11px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+            text-decoration: none;
+        }
+        .download-btn:hover {
+            background: rgba(59,130,246,0.25);
+        }
+
+        /* Model info */
+        .info-row {
+            display: flex;
+            justify-content: space-between;
+            padding: 8px 0;
+            border-bottom: 1px solid rgba(255,255,255,0.04);
+        }
+        .info-row:last-child { border: none; }
+        .info-row .label { color: #6b6b7e; font-size: 13px; }
+        .info-row .value { font-weight: 600; font-size: 13px; color: #e0e0e8; }
+
+        /* Code preview */
+        .code-block {
+            background: #111118;
+            border: 1px solid rgba(255,255,255,0.06);
+            border-radius: 10px;
+            padding: 16px;
+            margin-bottom: 16px;
+            position: relative;
+            overflow: hidden;
+        }
+        .code-block pre {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 12px;
+            line-height: 1.6;
+            color: #a0a0b8;
+            overflow-x: auto;
+            white-space: pre;
+        }
+        .code-block .copy-btn {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            background: rgba(255,255,255,0.06);
+            border: 1px solid rgba(255,255,255,0.1);
+            color: #8b8b9e;
+            border-radius: 6px;
+            padding: 4px 10px;
+            font-size: 11px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .code-block .copy-btn:hover {
+            background: rgba(16,185,129,0.15);
+            color: #10b981;
+        }
+        .code-block .lang-tag {
+            position: absolute;
+            bottom: 8px;
+            right: 10px;
+            font-size: 10px;
+            color: #4b4b5e;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        /* Deploy commands */
+        .cmd-section { margin-bottom: 20px; }
+        .cmd-section h4 {
+            font-size: 12px;
+            font-weight: 600;
+            color: #10b981;
+            margin-bottom: 8px;
+        }
+
+        .full-width { grid-column: 1 / -1; }
+
+        /* Loading state */
+        .loading {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            min-height: 200px;
+            color: #6b6b7e;
+        }
+        .spinner {
+            width: 20px; height: 20px;
+            border: 2px solid rgba(255,255,255,0.1);
+            border-top-color: #10b981;
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+            margin-right: 10px;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+
+        .acc-badge {
+            display: inline-block;
+            padding: 3px 10px;
+            border-radius: 6px;
+            font-weight: 700;
+            font-size: 14px;
+        }
+        .acc-high { background: rgba(16,185,129,0.15); color: #10b981; }
+        .acc-mid  { background: rgba(234,179,8,0.15);  color: #eab308; }
+        .acc-low  { background: rgba(239,68,68,0.15);  color: #ef4444; }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <div class="icon">🚀</div>
+        <h1>Model Deployment & Export</h1>
+        <span class="badge" id="statusBadge">LOADING...</span>
+    </div>
+
+    <div id="content">
+        <div class="loading">
+            <div class="spinner"></div>
+            <span>Loading deployment artifacts...</span>
+        </div>
+    </div>
+
+    <script>
+        async function loadDeployment() {
+            try {
+                const res = await fetch('/deploy-status');
+                const data = await res.json();
+
+                if (!data || !data.meta) {
+                    document.getElementById('content').innerHTML = `
+                        <div class="loading">
+                            <span>⏳ Awaiting model export...</span>
+                        </div>`;
+                    setTimeout(loadDeployment, 3000);
+                    return;
+                }
+
+                document.getElementById('statusBadge').textContent = 'READY';
+                document.getElementById('statusBadge').style.background = 'rgba(16,185,129,0.15)';
+
+                const m = data.meta;
+                const accClass = m.final_val_acc > 0.85 ? 'acc-high' : m.final_val_acc > 0.6 ? 'acc-mid' : 'acc-low';
+                const accPct = (m.final_val_acc * 100).toFixed(2);
+
+                const files = data.files || {};
+
+                document.getElementById('content').innerHTML = `
+                <div class="grid">
+                    <!-- Export Status -->
+                    <div class="card">
+                        <h3>📦 Exported Artifacts</h3>
+                        <ul class="export-list">
+                            ${makeExportRow('model.pt', 'PyTorch weights', files['model.pt'])}
+                            ${makeExportRow('model.onnx', 'ONNX Runtime', files['model.onnx'])}
+                            ${makeExportRow('model_scripted.pt', 'TorchScript', files['model_scripted.pt'])}
+                            ${makeExportRow('model_meta.json', 'Metadata', files['model_meta.json'])}
+                            ${makeExportRow('serve_api.py', 'FastAPI Server', files['serve_api.py'])}
+                            ${makeExportRow('Dockerfile', 'Container', files['Dockerfile'])}
+                        </ul>
+                    </div>
+
+                    <!-- Model Info -->
+                    <div class="card">
+                        <h3>🧠 Model Summary</h3>
+                        <div class="info-row">
+                            <span class="label">Target</span>
+                            <span class="value">${m.target_col || 'unknown'}</span>
+                        </div>
+                        <div class="info-row">
+                            <span class="label">Classes</span>
+                            <span class="value">${m.num_classes || '?'}</span>
+                        </div>
+                        <div class="info-row">
+                            <span class="label">Features</span>
+                            <span class="value">${m.input_dim || '?'}</span>
+                        </div>
+                        <div class="info-row">
+                            <span class="label">Epochs Trained</span>
+                            <span class="value">${m.epochs_trained || '?'}</span>
+                        </div>
+                        <div class="info-row">
+                            <span class="label">Val Accuracy</span>
+                            <span class="value"><span class="acc-badge ${accClass}">${accPct}%</span></span>
+                        </div>
+                        <div class="info-row">
+                            <span class="label">Val Loss</span>
+                            <span class="value">${(m.final_val_loss || 0).toFixed(4)}</span>
+                        </div>
+                    </div>
+
+                    <!-- Deploy Commands -->
+                    <div class="card full-width">
+                        <h3>⚡ Quick Deploy</h3>
+
+                        <div class="cmd-section">
+                            <h4>1. Start API locally</h4>
+                            <div class="code-block">
+                                <button class="copy-btn" onclick="copyCode(this)">Copy</button>
+                                <pre>cd exports && pip install -r requirements.txt && uvicorn serve_api:app --port 8080</pre>
+                                <span class="lang-tag">bash</span>
+                            </div>
+                        </div>
+
+                        <div class="cmd-section">
+                            <h4>2. Docker deployment</h4>
+                            <div class="code-block">
+                                <button class="copy-btn" onclick="copyCode(this)">Copy</button>
+                                <pre>cd exports && docker build -t omniml-api . && docker run -p 8080:8080 omniml-api</pre>
+                                <span class="lang-tag">bash</span>
+                            </div>
+                        </div>
+
+                        <div class="cmd-section">
+                            <h4>3. Test with cURL</h4>
+                            <div class="code-block">
+                                <button class="copy-btn" onclick="copyCode(this)">Copy</button>
+                                <pre>curl -X POST http://localhost:8080/predict \\
+  -H "Content-Type: application/json" \\
+  -d '{"features": [${Array(Math.min(m.input_dim || 10, 10)).fill('0.0').join(', ')}${(m.input_dim || 0) > 10 ? ', ...' : ''}]}'</pre>
+                                <span class="lang-tag">bash</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- API Preview -->
+                    <div class="card full-width">
+                        <h3>🔍 API Endpoints</h3>
+                        <div class="code-block">
+                            <pre>POST /predict     → Classify input features → {"predicted_class": 0, "confidence": 0.95, "probabilities": [...]}
+GET  /health      → Health check            → {"status": "ok", "model": "onnx", ...}
+GET  /meta        → Model metadata          → {"feature_names": [...], "input_dim": ${m.input_dim}, ...}
+GET  /docs        → Swagger UI              → Interactive API documentation</pre>
+                            <span class="lang-tag">http</span>
+                        </div>
+                    </div>
+                </div>`;
+            } catch (err) {
+                console.error('Deployment status fetch failed:', err);
+                setTimeout(loadDeployment, 3000);
+            }
+        }
+
+        function makeExportRow(filename, desc, fileInfo) {
+            if (fileInfo && fileInfo.exists) {
+                const sizeKB = (fileInfo.size / 1024).toFixed(1);
+                return `<li>
+                    <span class="name">
+                        <span class="icon-check ok">✓</span>
+                        <span>${desc} <small style="color:#4b4b5e">(${filename})</small></span>
+                    </span>
+                    <span style="display:flex;align-items:center;gap:10px;">
+                        <span class="size">${sizeKB} KB</span>
+                        <a href="/dl-artifact/${filename}" class="download-btn" download>Download</a>
+                    </span>
+                </li>`;
+            }
+            return `<li>
+                <span class="name">
+                    <span class="icon-check pending">⏳</span>
+                    <span>${desc} <small style="color:#4b4b5e">(${filename})</small></span>
+                </span>
+                <span class="size">—</span>
+            </li>`;
+        }
+
+        function copyCode(btn) {
+            const code = btn.parentElement.querySelector('pre').textContent;
+            navigator.clipboard.writeText(code);
+            btn.textContent = 'Copied!';
+            btn.style.color = '#10b981';
+            setTimeout(() => { btn.textContent = 'Copy'; btn.style.color = ''; }, 2000);
+        }
+
+        loadDeployment();
+    </script>
+</body>
+</html>
