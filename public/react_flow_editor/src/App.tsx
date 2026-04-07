@@ -406,30 +406,39 @@ const AppFlow = () => {
     // Step 1: auto-sanitize (remove duplicate Input/Output, wire orphans)
     const { nodes: cleanNodes, edges: cleanEdges } = sanitizeGraph();
 
-    // Step 2: validate the cleaned graph inline (don't update state to avoid
-    // render cycle — compute errors directly)
+    // Step 2: validate the SANITIZED graph (use cleanNodes/cleanEdges — not the
+    // stale state snapshot — so auto-wired orphans are not flagged as islands)
     const inputCount  = cleanNodes.filter(n => n.data.nodeType === 'Input').length;
     const outputCount = cleanNodes.filter(n => n.data.nodeType === 'Output').length;
+
+    // Only flag truly unconnected nodes AFTER sanitizeGraph has had a chance to
+    // auto-wire them — if sanitizeGraph wired them, islandCount will be 0
     const connectedIds = new Set<string>();
     cleanEdges.forEach(e => { connectedIds.add(e.source); connectedIds.add(e.target); });
-    const islandCount = cleanNodes.filter(n => cleanNodes.length > 1 && !connectedIds.has(n.id)).length;
+    const islandCount = cleanNodes.length > 1
+      ? cleanNodes.filter(n => !connectedIds.has(n.id)).length
+      : 0;
 
-    const syncErrors: ValidationError[] = [];
-    if (inputCount === 0)  syncErrors.push({ id: 'no-input',  message: 'Missing Input node — add one from the Layer Palette', severity: 'error' });
-    if (outputCount === 0) syncErrors.push({ id: 'no-output', message: 'Missing Output node — add one from the Layer Palette', severity: 'error' });
-    if (islandCount > 0)   syncErrors.push({ id: 'islands',   message: `${islandCount} unconnected node(s) detected — every node must be wired`, severity: 'error' });
+    const syncValidation: ValidationError[] = [];
+    if (inputCount === 0)  syncValidation.push({ id: 'no-input',  message: 'Missing Input node — add one from the Layer Palette', severity: 'error' });
+    if (outputCount === 0) syncValidation.push({ id: 'no-output', message: 'Missing Output node — add one from the Layer Palette', severity: 'error' });
+    if (islandCount > 0)   syncValidation.push({ id: 'islands',   message: `${islandCount} unconnected node(s) — these will be ignored`, severity: 'warning' });
 
-    if (syncErrors.length > 0) {
-      setValidationErrors(syncErrors);
+    const hardErrors = syncValidation.filter(e => e.severity === 'error');
+
+    if (hardErrors.length > 0) {
+      setValidationErrors(syncValidation);
       setIsValid(false);
       setSyncState('error');
       setTimeout(() => setSyncState('idle'), 2500);
-      // Scroll error panel into view
       setTimeout(() => {
         document.getElementById('validation-panel')?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
       }, 50);
       return;
     }
+
+    setValidationErrors(syncValidation); // Still show warnings in the panel if any
+    setIsValid(true);
 
     // Step 3: POST to /sync-graph with cleaned data
     setSyncState('syncing');

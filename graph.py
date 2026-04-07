@@ -16,16 +16,29 @@ import os
 import re
 import sys
 import json
+import uuid
+import logging
 import subprocess
 import textwrap
 import tempfile
 import threading
-from typing import TypedDict, List, Optional
+from typing import TypedDict, List, Optional, Any
 
 from dotenv import load_dotenv
 from langchain_groq import ChatGroq
 from langgraph.graph import StateGraph, END
 from langgraph.types import interrupt
+
+# ── Safe Logger — prevents OSError [Errno 5] in async Chainlit context ───────
+_logger = logging.getLogger("omniml.graph")
+logging.basicConfig(level=logging.INFO, format="%(message)s")
+
+def _safe_log(msg: str) -> None:
+    """Print to stdout safely; if stdout is broken (Errno 5), fall back to logger."""
+    try:
+        print(msg, flush=True)
+    except OSError:
+        _logger.info(msg)
 
 # ── Global EDA Progress Store ────────────────────────────────────────────────
 # Thread-safe ring buffer; app.py SSE endpoint reads from this
@@ -71,7 +84,7 @@ load_dotenv()
 kaggle_auth_setup()   # ← Critical: must run before any kaggle call
 
 GROQ_API_KEY = os.environ.get("GROQ_API_KEY", "")
-GROQ_MODEL   = "openai/gpt-oss-120b"
+GROQ_MODEL   = os.environ.get("GROQ_MODEL", "openai/gpt-oss-120b")
 
 
 # ─────────────────────────────────────────────
@@ -123,6 +136,20 @@ class AgentState(TypedDict):
     metrics:           list           # NEW: List of epoch logs for real-time charting
     arxiv_benchmarks:  str            # NEW: Sprint 4 Literature comparator results
     deployment_artifacts: Optional[dict] # NEW: Export paths (onnx, torchscript, weights, api script)
+    
+    # Enterpise
+    modality: str
+    pipeline_config: dict
+    imbalance: dict
+    xai_report: Any
+    
+    # Tier 2 Run Fields
+    problem_id: str
+    input_data_version: int
+    delta_state: Optional[dict]
+    drift_report: Optional[dict]
+    performance_decay_triggered: Optional[bool]
+    comparison_report: Optional[str]
 
 
 # ─────────────────────────────────────────────
@@ -163,12 +190,56 @@ def get_llm(temperature: float = 0.5) -> ChatGroq:
 
 
 # ─────────────────────────────────────────────
-# 3.  Helper — strip markdown fences from LLM code output
+# 3.  Helper — resilient JSON parsing
 # ─────────────────────────────────────────────
 def _strip_code_fences(raw: str) -> str:
     """Remove ```python … ``` or ``` … ``` fences if present."""
     match = re.search(r"```(?:[pP]ython)?\n(.*?)```", raw, re.DOTALL)
     return match.group(1).strip() if match else raw.strip()
+
+def _resilient_json_parse(raw: str) -> Optional[Any]:
+    """
+    Tries to parse JSON from a raw string that might contain LLM noise or minor syntax errors.
+    1. Strips markdown fences.
+    2. Extracts content between first { and last }.
+    3. Fixes trailing commas.
+    4. Falls back to returning None if parsing fails.
+    """
+    import json
+    import re
+    
+    # Pre-cleaning
+    raw = _strip_code_fences(raw).strip()
+    
+    # Find bounds
+    start = raw.find("{")
+    end = raw.rfind("}") + 1
+    if start == -1 or end <= start:
+        # Check for array if object not found
+        start = raw.find("[")
+        end = raw.rfind("]") + 1
+        if start == -1 or end <= start:
+            return None
+            
+    json_str = raw[start:end]
+    
+    # Try 1: Standard
+    try:
+        return json.loads(json_str)
+    except json.JSONDecodeError:
+        pass
+        
+    # Try 2: Fix trailing commas
+    try:
+        fixed = re.sub(r',\s*([\]}])', r'\1', json_str)
+        return json.loads(fixed)
+    except json.JSONDecodeError:
+        pass
+        
+    # Try 3: Fix missing quotes around boolean/null or other very common LLM slips
+    # but we'll stop here to avoid corrupting data.
+    
+    return None
 
 
 # ─────────────────────────────────────────────
@@ -228,63 +299,34 @@ Adapt node count, units, and output activation to the problem.
 Keep x=300 for all nodes. Increment y by 130 per node.
 """
     
-    try:
-        client = Groq(api_key=os.environ["GROQ_API_KEY"])
+    client = Groq(api_key=os.environ["GROQ_API_KEY"])
+    graph = None
+    attempts = 3
+    
+    for i in range(attempts):
+        _safe_log(f"[architect] Synthesizing architecture (attempt {i+1}/{attempts})...")
         resp = client.chat.completions.create(
             model="openai/gpt-oss-120b",
             messages=[{"role": "user", "content": prompt}],
-            temperature=0.2,
+            temperature=0.2 + (i * 0.2), # Increase temp on retry to get a different result
             max_tokens=2500,
         )
         raw = resp.choices[0].message.content.strip()
+        graph = _resilient_json_parse(raw)
         
-        # Aggressively strip any markdown fences Groq adds
-        raw = raw.strip()
-        if "```" in raw:
-            parts = raw.split("```")
-            for part in parts:
-                part = part.strip()
-                if part.startswith("json"):
-                    part = part[4:].strip()
-                if part.startswith("{"):
-                    raw = part
-                    break
-        
-        # Find first { and last } to extract pure JSON
-        start = raw.find("{")
-        end   = raw.rfind("}") + 1
-        if start != -1 and end > start:
-            raw = raw[start:end]
-        
-        graph = json.loads(raw)
-    except Exception as e:
-        # Hard fallback — always give a valid graph
-        print(f"[ARCHITECT FALLBACK] {str(e)}", flush=True)
+        if graph and "nodes" in graph:
+            break
+        _safe_log("[architect] ⚠️ JSON parse failed, retrying...")
+    
+    if not graph:
+        _safe_log("[architect] 🛑 Failed to synthesize valid JSON architecture. Using safe fallback.")
         graph = {
-          "nodes": [
-            {"id":"1","type":"customNode","width":220,"height":80,
-             "position":{"x":300,"y":50},
-             "data":{"label":"Input","nodeType":"Input",
-                     "params":{"shape":"30,"}}},
-            {"id":"2","type":"customNode","width":220,"height":80,
-             "position":{"x":300,"y":180},
-             "data":{"label":"Dense_1","nodeType":"Dense",
-                     "params":{"units":128,"activation":"relu"}}},
-            {"id":"3","type":"customNode","width":220,"height":80,
-             "position":{"x":300,"y":310},
-             "data":{"label":"Dropout_1","nodeType":"Dropout",
-                     "params":{"rate":0.3}}},
-            {"id":"4","type":"customNode","width":220,"height":80,
-             "position":{"x":300,"y":440},
-             "data":{"label":"Output","nodeType":"Output",
-                     "params":{"units":1,"activation":"sigmoid"}}}
-          ],
-          "edges": [
-            {"id":"e1-2","source":"1","target":"2","animated":True},
-            {"id":"e2-3","source":"2","target":"3","animated":True},
-            {"id":"e3-4","source":"3","target":"4","animated":True}
-          ],
-          "rationale": "Fallback architecture for binary classification."
+            "nodes": [
+                {"id":"1","type":"customNode","width":220,"height":80,"position":{"x":300,"y":50},"data":{"label":"Input","nodeType":"Input","params":{"shape":"30,"}}},
+                {"id":"2","type":"customNode","width":220,"height":80,"position":{"x":300,"y":200},"data":{"label":"Output","nodeType":"Output","params":{"units":1,"activation":"sigmoid"}}}
+            ],
+            "edges": [{"id":"e1-2","source":"1","target":"2","animated":true}],
+            "rationale": "Safe fallback architecture (Linear probe)."
         }
     
     # Store in BOTH places so nothing loses it
@@ -337,7 +379,7 @@ def kaggle_sourcer_node(state: AgentState) -> dict:
     """Searches Kaggle for real datasets based on the user query."""
     llm = get_llm(temperature=0.0)
     search_query = _extract_keyword(state['user_query'], llm)
-    print(f"[kaggle_sourcer] Searching for: '{search_query}'")
+    _safe_log(f"[kaggle_sourcer] Searching for: '{search_query}'")
     
     res = kaggle_search_tool.invoke({"query": search_query})
     return {"kaggle_results": res}
@@ -346,7 +388,7 @@ def huggingface_sourcer_node(state: AgentState) -> dict:
     """Searches HuggingFace for real datasets based on the user query."""
     llm = get_llm(temperature=0.0)
     search_query = _extract_keyword(state['user_query'], llm)
-    print(f"[hf_sourcer] Searching for: '{search_query}'")
+    _safe_log(f"[hf_sourcer] Searching for: '{search_query}'")
     
     res = hf_search_tool.invoke({"query": search_query})
     return {"hf_results": res}
@@ -387,9 +429,10 @@ def dataset_ranker_node(state: AgentState) -> dict:
     """).strip()
     
     response = llm.invoke(prompt)
-    raw = _strip_code_fences(response.content)
-    try: top_refs = json.loads(raw)
-    except: top_refs = [combined[0]["ref"]] if combined else []
+    top_refs = _resilient_json_parse(response.content)
+    if not top_refs or not isinstance(top_refs, list):
+        _safe_log("[dataset_ranker] ⚠️ JSON parse failed for rankings, using fallback first ref.")
+        top_refs = [combined[0]["ref"]] if combined else []
         
     dataset_options = []
     for ref in top_refs[:3]:
@@ -436,7 +479,7 @@ def dataset_downloader_node(state: AgentState) -> dict:
     Stores the absolute local CSV path in state so the Engineer can use it directly.
     """
     ref = state["selected_dataset"]
-    print(f"[downloader] Downloading dataset: {ref}")
+    _safe_log(f"[downloader] Downloading dataset: {ref}")
     
     # Identify source from options
     source = "kaggle"
@@ -452,14 +495,14 @@ def dataset_downloader_node(state: AgentState) -> dict:
         csv_path = kaggle_download_tool.invoke({"dataset_ref": ref})
 
     if csv_path.startswith("ERROR"):
-        print(f"[downloader] Download failed: {csv_path}")
+        _safe_log(f"[downloader] Download failed: {csv_path}")
         # Fall back to the NASA C-MAPSS data already in the workspace
         import pathlib
         fallback = str(pathlib.Path("train_FD001.txt").absolute())
-        print(f"[downloader] Using NASA C-MAPSS fallback: {fallback}")
+        _safe_log(f"[downloader] Using NASA C-MAPSS fallback: {fallback}")
         csv_path = fallback
 
-    print(f"[downloader] ✅ CSV ready at: {csv_path}")
+    _safe_log(f"[downloader] ✅ CSV ready at: {csv_path}")
     return {"dataset_csv_path": csv_path}
 
 
@@ -491,7 +534,7 @@ def eda_analyzer_node(state: AgentState) -> dict:
         _eda_steps[session_id] = []
         _eda_done[session_id]  = False
 
-    print(f"[eda] Profiling dataset: {csv_path}")
+    _safe_log(f"[eda] Profiling dataset: {csv_path}")
 
     # ── Step 1: Load CSV ────────────────────────────────────────────────────
     _eda_emit(session_id, "load", "Loading CSV", status="running",
@@ -503,7 +546,7 @@ def eda_analyzer_node(state: AgentState) -> dict:
                   detail=f"{n_rows:,} rows × {n_cols} columns loaded", pct=12,
                   data={"rows": n_rows, "cols": n_cols})
     except Exception as e:
-        print(f"[eda] CSV read error: {e}")
+        _safe_log(f"[eda] CSV read error: {e}")
         _eda_emit(session_id, "load", "Loading CSV", status="error",
                   detail=str(e), pct=0)
         with _eda_lock:
@@ -740,7 +783,7 @@ def _validate_and_fix_syntax(code: str, llm, max_attempts: int = 3) -> str:
             ast.parse(code)
             return code          # valid — done
         except SyntaxError as exc:
-            print(f"[syntax-fix] Attempt {attempt+1}/{max_attempts} — SyntaxError at line {exc.lineno}: {exc.msg}")
+            _safe_log(f"[syntax-fix] Attempt {attempt+1}/{max_attempts} — SyntaxError at line {exc.lineno}: {exc.msg}")
             context_start = max(0, (exc.lineno or 1) - 5)
             context_lines = code.splitlines()[context_start : (exc.lineno or 1) + 3]
             context_snippet = "\n".join(f"{context_start + i + 1}: {l}" for i, l in enumerate(context_lines))
@@ -760,7 +803,7 @@ def _validate_and_fix_syntax(code: str, llm, max_attempts: int = 3) -> str:
                 response = llm.invoke(fix_prompt)
                 code = _strip_code_fences(response.content)
             except Exception as e:
-                print(f"[syntax-fix] LLM call failed: {e}")
+                _safe_log(f"[syntax-fix] LLM call failed: {e}")
                 break
     return code  # return best effort
 
@@ -838,310 +881,8 @@ def _build_model_class(graph_nodes):
 
 
 def engineer_node(state: AgentState) -> dict:
-    """Deterministic template-based script generator. No LLM truncation risk."""
-    import json
-
-    final_graph = state.get("final_graph", {})
-    tc = state.get("training_config") or {}
-    csv_path    = state.get("dataset_csv_path", "train.csv")
-
-    epochs      = int(tc.get("epochs", 50))
-    test_size   = float(tc.get("test_size", 0.2))
-    batch_size  = int(tc.get("batch_size", 64))
-    optimizer   = str(tc.get("optimizer", "adam")).lower()
-    lr          = float(tc.get("lr", 0.001))
-    early_stop  = bool(tc.get("early_stop", True))
-    dropout     = bool(tc.get("dropout", True))
-    class_wts   = bool(tc.get("class_weights", True))
-    hpt_trials  = int(tc.get("hpt_trials", 15))
-    seed        = int(tc.get("seed", 42))
-    patience    = max(10, epochs // 5)
-
-    graph_nodes = final_graph.get("nodes", [])
-    if not graph_nodes:
-        return {**state, "generated_code": None}
-
-    init_block, forward_block = _build_model_class(graph_nodes)
-
-    script = f'''import json
-import random
-import numpy as np
-import pandas as pd
-import torch
-import torch.nn as nn
-from torch.utils.data import TensorDataset, DataLoader
-from sklearn.model_selection import train_test_split
-from sklearn.utils.class_weight import compute_class_weight
-import optuna
-optuna.logging.set_verbosity(optuna.logging.WARNING)
-
-# === User-defined settings ===
-CSV_PATH      = "{csv_path}"
-NUM_EPOCHS    = {epochs}
-TEST_SIZE     = {test_size}
-BATCH_SIZE    = {batch_size}
-LR            = {lr}
-HPT_TRIALS    = {hpt_trials}
-SEED          = {seed}
-USE_EARLY_STOP = {early_stop}
-USE_DROPOUT    = {dropout}
-USE_CLASS_WTS  = {class_wts}
-PATIENCE       = {patience}
-
-random.seed(SEED)
-np.random.seed(SEED)
-torch.manual_seed(SEED)
-
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
-# === Data loading & preprocessing ===
-df = pd.read_csv(CSV_PATH)
-
-# Drop columns that are mostly null
-df = df.drop(columns=[c for c in df.columns if df[c].isnull().mean() > 0.5])
-
-# Auto-detect target column:
-# 1. Find the column with fewest unique values (likely categorical target)
-# 2. Exclude ID-like columns (all unique values)
-from sklearn.preprocessing import LabelEncoder
-
-# Identify the target: lowest cardinality column that isn't an ID
-candidates = []
-for col in df.columns:
-    nunique = df[col].nunique()
-    if nunique < 1:
-        continue  # skip empty columns
-    if nunique == len(df):
-        continue  # skip ID-like columns (all unique)
-    candidates.append((col, nunique))
-
-if candidates:
-    # Pick the column with fewest unique values (likely the target)
-    candidates.sort(key=lambda x: x[1])
-    target_col = candidates[0][0]
-else:
-    target_col = df.columns[-1]
-
-# Extract target before dropping non-numeric columns
-y_raw = df[target_col].copy()
-df = df.drop(columns=[target_col])
-
-# Keep only numeric features
-df = df.select_dtypes(include=["number"])
-# Drop ID-like columns (all unique integer values)
-id_cols = [c for c in df.columns if df[c].nunique() == len(df)]
-if id_cols:
-    df = df.drop(columns=id_cols)
-df = df.dropna()
-if len(df) == 0:
-    raise RuntimeError("DataFrame empty after preprocessing")
-
-# Align y with remaining rows
-y_raw = y_raw.loc[df.index]
-
-# Label-encode target to integers
-try:
-    y = y_raw.values.astype(np.float64).astype(np.int64)
-except (ValueError, TypeError):
-    le = LabelEncoder()
-    y = le.fit_transform(y_raw.astype(str).values)
-
-X = df.values.astype(np.float32)
-num_classes = len(np.unique(y))
-print(f"Dataset: {{X.shape[0]}} samples, {{X.shape[1]}} features, {{num_classes}} classes, target='{{target_col}}'", flush=True)
-
-X_train, X_val, y_train_np, y_val_np = train_test_split(
-    X, y, test_size=TEST_SIZE, random_state=SEED
-)
-input_dim = X_train.shape[1]
-
-y_train_t = torch.tensor(y_train_np, dtype=torch.long).to(device)
-y_val_t   = torch.tensor(y_val_np, dtype=torch.long).to(device)
-X_train_t = torch.tensor(X_train, dtype=torch.float32).to(device)
-X_val_t   = torch.tensor(X_val, dtype=torch.float32).to(device)
-
-class_weights_tensor = None
-if USE_CLASS_WTS:
-    cw = compute_class_weight("balanced", classes=np.unique(y_train_np), y=y_train_np)
-    class_weights_tensor = torch.tensor(cw, dtype=torch.float32).to(device)
-
-train_ds = TensorDataset(X_train_t, y_train_t)
-val_ds   = TensorDataset(X_val_t, y_val_t)
-train_loader = DataLoader(train_ds, batch_size=BATCH_SIZE, shuffle=True)
-val_loader   = DataLoader(val_ds, batch_size=BATCH_SIZE, shuffle=False)
-
-# === Model ===
-class Net(nn.Module):
-    def __init__(self, input_dim, num_classes):
-        super().__init__()
-{init_block}
-
-    def forward(self, x):
-{forward_block}
-        return x
-
-# === Optuna HPT ===
-def objective(trial):
-    model = Net(input_dim, num_classes).to(device)
-    trial_lr = trial.suggest_float("lr", 1e-5, 1e-2, log=True)
-    opt = torch.optim.Adam(model.parameters(), lr=trial_lr)
-    loss_fn = nn.CrossEntropyLoss(weight=class_weights_tensor)
-    model.train()
-    for _ in range(3):
-        for xb, yb in train_loader:
-            opt.zero_grad()
-            loss = loss_fn(model(xb), yb)
-            loss.backward()
-            opt.step()
-    model.eval()
-    val_loss = 0.0
-    count = 0
-    with torch.no_grad():
-        for xb, yb in val_loader:
-            val_loss += loss_fn(model(xb), yb).item() * len(xb)
-            count += len(xb)
-    avg_val = val_loss / max(count, 1)
-    try:
-        best_so_far = trial.study.best_value
-    except ValueError:
-        best_so_far = avg_val
-    print(json.dumps({{"type": "hpt_trial", "trial": trial.number, "total": HPT_TRIALS,
-                       "params": {{"lr": trial_lr}}, "value": avg_val,
-                       "status": "complete", "best_so_far": best_so_far}}), flush=True)
-    return avg_val
-
-study = optuna.create_study(direction="minimize")
-study.optimize(objective, n_trials=HPT_TRIALS)
-best_params = study.best_trial.params
-best_val    = study.best_value
-print(json.dumps({{"type": "hpt_complete", "best_params": best_params,
-                   "best_value": best_val, "total_trials": HPT_TRIALS}}), flush=True)
-
-# === Final training ===
-final_lr = best_params.get("lr", LR)
-model = Net(input_dim, num_classes).to(device)
-optimizer = torch.optim.{"Adam" if optimizer == "adam" else "SGD" if optimizer == "sgd" else "RMSprop"}(model.parameters(), lr=final_lr)
-loss_fn = nn.CrossEntropyLoss(weight=class_weights_tensor)
-
-best_val_loss = float("inf")
-epochs_no_improve = 0
-
-for epoch in range(NUM_EPOCHS):
-    # -- Train --
-    model.train()
-    train_loss_sum = 0.0
-    correct_train = 0
-    total_train = 0
-    for xb, yb in train_loader:
-        optimizer.zero_grad()
-        logits = model(xb)
-        loss = loss_fn(logits, yb)
-        loss.backward()
-        optimizer.step()
-        train_loss_sum += loss.item() * len(xb)
-        preds = torch.argmax(logits, dim=1)
-        correct_train += (preds == yb).sum().item()
-        total_train += len(yb)
-
-    avg_train_loss = train_loss_sum / max(total_train, 1)
-    train_acc = correct_train / max(total_train, 1)
-
-    # -- Validate --
-    model.eval()
-    val_loss_sum = 0.0
-    correct_val = 0
-    total_val = 0
-    with torch.no_grad():
-        for xb, yb in val_loader:
-            logits = model(xb)
-            loss = loss_fn(logits, yb)
-            val_loss_sum += loss.item() * len(xb)
-            preds = torch.argmax(logits, dim=1)
-            correct_val += (preds == yb).sum().item()
-            total_val += len(yb)
-
-    avg_val_loss = val_loss_sum / max(total_val, 1)
-    val_acc = correct_val / max(total_val, 1)
-
-    # -- Emit epoch metric (CRITICAL for live charts) --
-    print(json.dumps({{"type": "epoch_metric", "epoch": epoch + 1,
-                       "loss": round(avg_train_loss, 6), "val_loss": round(avg_val_loss, 6),
-                       "acc": round(train_acc, 6), "val_acc": round(val_acc, 6)}}), flush=True)
-
-    # -- Early stopping --
-    if USE_EARLY_STOP:
-        if avg_val_loss < best_val_loss:
-            best_val_loss = avg_val_loss
-            epochs_no_improve = 0
-        else:
-            epochs_no_improve += 1
-            if epochs_no_improve >= PATIENCE:
-                break
-
-print("Training complete. Final val_acc:", round(val_acc, 4))
-
-# ═══════════════════════════════════════════════
-# MODEL EXPORT — ONNX, TorchScript, Weights
-# ═══════════════════════════════════════════════
-import os as _os
-_export_dir = _os.path.join(_os.getcwd(), "exports")
-_os.makedirs(_export_dir, exist_ok=True)
-
-# 1. Save PyTorch weights
-_pt_path = _os.path.join(_export_dir, "model.pt")
-torch.save(model.state_dict(), _pt_path)
-print(json.dumps({{"type": "export_step", "step": "weights", "path": _pt_path}}), flush=True)
-
-# 2. Export ONNX
-try:
-    _dummy = torch.randn(1, input_dim).to(device)
-    _onnx_path = _os.path.join(_export_dir, "model.onnx")
-    torch.onnx.export(
-        model, _dummy, _onnx_path,
-        input_names=["features"],
-        output_names=["logits"],
-        dynamic_axes={{"features": {{0: "batch"}}, "logits": {{0: "batch"}}}},
-        opset_version=17,
-    )
-    print(json.dumps({{"type": "export_step", "step": "onnx", "path": _onnx_path}}), flush=True)
-except Exception as _e:
-    print(json.dumps({{"type": "export_step", "step": "onnx", "error": str(_e)}}), flush=True)
-
-# 3. Export TorchScript
-try:
-    _scripted = torch.jit.script(model)
-    _ts_path = _os.path.join(_export_dir, "model_scripted.pt")
-    _scripted.save(_ts_path)
-    print(json.dumps({{"type": "export_step", "step": "torchscript", "path": _ts_path}}), flush=True)
-except Exception as _e:
-    # Fallback: use tracing instead of scripting
-    try:
-        _traced = torch.jit.trace(model, torch.randn(1, input_dim).to(device))
-        _ts_path = _os.path.join(_export_dir, "model_scripted.pt")
-        _traced.save(_ts_path)
-        print(json.dumps({{"type": "export_step", "step": "torchscript", "path": _ts_path}}), flush=True)
-    except Exception as _e2:
-        print(json.dumps({{"type": "export_step", "step": "torchscript", "error": str(_e2)}}), flush=True)
-
-# 4. Save metadata
-_feature_names = [c for c in df.columns] if hasattr(df, 'columns') else [f"f{{i}}" for i in range(input_dim)]
-_meta = {{
-    "input_dim": input_dim,
-    "num_classes": num_classes,
-    "target_col": target_col,
-    "feature_names": _feature_names,
-    "final_val_acc": round(val_acc, 6),
-    "final_val_loss": round(avg_val_loss, 6),
-    "epochs_trained": epoch + 1,
-    "csv_path": CSV_PATH,
-}}
-_meta_path = _os.path.join(_export_dir, "model_meta.json")
-with open(_meta_path, "w") as _mf:
-    json.dump(_meta, _mf, indent=2, default=str)
-print(json.dumps({{"type": "export_complete", "export_dir": _export_dir, "meta": _meta}}), flush=True)
-'''
-
-    return {"generated_code": script, "retry_count": 0, "training_logs": "", "metrics": []}
+    from anomallm.engineer import engineer_node as _egn
+    return _egn(state)
 
 
 # ─────────────────────────────────────────────
@@ -1183,19 +924,19 @@ async def execution_sandbox_node(state: AgentState) -> dict:
     try:
         ast.parse(script)
     except SyntaxError as se:
-        print(f"[sandbox] SyntaxError detected pre-flight at line {se.lineno}: {se.msg} — auto-repairing...")
+        _safe_log(f"[sandbox] SyntaxError detected pre-flight at line {se.lineno}: {se.msg} — auto-repairing...")
         script = _validate_and_fix_syntax(script, llm_for_fix)
         try:
             ast.parse(script)
-            print("[sandbox] Pre-flight syntax repair succeeded.")
+            _safe_log("[sandbox] Pre-flight syntax repair succeeded.")
         except SyntaxError as se2:
             err = f"FATAL SyntaxError after repair: {se2.msg} at line {se2.lineno}"
-            print(f"[sandbox] {err}")
+            _safe_log(f"[sandbox] {err}")
             return {**state, "training_logs": err, "metrics": []}
 
 
 
-    print("[sandbox] 💻 Local mode selected. Subprocess streaming enabled...")
+    _safe_log("[sandbox] 💻 Local mode selected. Subprocess streaming enabled...")
     stdout_lines = []
     
     try:
@@ -1348,7 +1089,7 @@ def arxiv_comparator_node(state: AgentState) -> dict:
         Output ONLY the search string (e.g., "heart failure prediction neural network").
     """
     search_query = llm.invoke(query_prompt).content.strip().replace('"', '')
-    print(f"[comparator] 📡 ArXiv Search Query: {search_query}")
+    _safe_log(f"[comparator] 📡 ArXiv Search Query: {search_query}")
     
     # ── Step B: Invoke tool ──────────────────────────────────────────────────
     literature_raw = arxiv_search_tool.invoke(search_query)
@@ -1404,7 +1145,7 @@ def model_deployer_node(state: AgentState) -> dict:
 
     # Read model metadata
     if not os.path.exists(meta_path):
-        print("[deployer] ⚠️  No model_meta.json found — skipping deployment generation")
+        _safe_log("[deployer] ⚠️  No model_meta.json found — skipping deployment generation")
         return {"deployment_artifacts": None}
 
     with open(meta_path) as f:
@@ -1525,7 +1266,7 @@ if __name__ == "__main__":
     api_path = os.path.join(export_dir, "serve_api.py")
     with open(api_path, "w") as f:
         f.write(api_script)
-    print(f"[deployer] ✅ FastAPI script → {api_path}")
+    _safe_log(f"[deployer] ✅ FastAPI script → {api_path}")
 
     # — 2. Generate requirements.txt —
     reqs = """fastapi>=0.104.0
@@ -1556,8 +1297,8 @@ CMD ["uvicorn", "serve_api:app", "--host", "0.0.0.0", "--port", "8080"]
     with open(df_path, "w") as f:
         f.write(dockerfile)
 
-    print(f"[deployer] ✅ Dockerfile → {df_path}")
-    print(f"[deployer] ✅ requirements.txt → {reqs_path}")
+    _safe_log(f"[deployer] ✅ Dockerfile → {df_path}")
+    _safe_log(f"[deployer] ✅ requirements.txt → {reqs_path}")
 
     artifacts = {
         "export_dir":    export_dir,
@@ -1599,6 +1340,10 @@ def evaluator_node(state: AgentState) -> dict:
 
         ── Scholarly Comparison (Sprint 4) ──────────────────────────────────────────
         {state.get('arxiv_benchmarks', 'Literature search skipped.')}
+        ─────────────────────────────────────────────────────────────────────────────
+
+        ── Explainable AI (XAI) Narrative ────────────────────────────────────────
+        {state.get('xai_report', 'XAI analysis skipped.')}
         ─────────────────────────────────────────────────────────────────────────────
 
         Generate a VAST, comprehensive, and highly detailed professional Markdown report using EXACTLY this structure:
@@ -1730,6 +1475,17 @@ def evaluator_node(state: AgentState) -> dict:
             pdf.image("loss_curve.png", w=160)
             y_pos = pdf.get_y() + 10
 
+        if os.path.exists("shap_importance.png"):
+            if y_pos > 180:
+                pdf.add_page()
+                y_pos = pdf.get_y()
+            else:
+                pdf.set_y(y_pos)
+            pdf.set_font('helvetica', 'B', 12)
+            pdf.safe_cell(0, 10, "4. SHAP Feature Importance", ln=1)
+            pdf.image("shap_importance.png", w=160)
+            y_pos = pdf.get_y() + 10
+
         if os.path.exists("confusion_matrix.png"):
             if y_pos > 180:
                 pdf.add_page()
@@ -1741,9 +1497,9 @@ def evaluator_node(state: AgentState) -> dict:
             pdf.image("confusion_matrix.png", w=140)
 
         pdf.output("Final_Report.pdf")
-        print("[evaluator] ✅ PDF report generated successfully.")
+        _safe_log("[evaluator] ✅ PDF report generated successfully.")
     except Exception as e:
-        print(f"[evaluator] ❌ PDF generation failed: {e}")
+        _safe_log(f"[evaluator] ❌ PDF generation failed: {e}")
 
     return {"final_report": report_content}
 
@@ -1765,7 +1521,7 @@ def check_execution_success(state: AgentState) -> str:
         if logs.strip().startswith("SyntaxError") or "\nSyntaxError" in logs:
             return "debugger"
             
-    return "arxiv_comparator"
+    return "xai_node"
 
 def check_engineer_code(state: AgentState) -> str:
     generated_code = state.get("generated_code")
@@ -1774,16 +1530,151 @@ def check_engineer_code(state: AgentState) -> str:
     return "execution_choice"
 
 # ─────────────────────────────────────────────
+# Tier 2 — Autonomous Ecology Nodes
+# ─────────────────────────────────────────────
+def run_history_node(state: AgentState) -> dict:
+    from anomallm.persistence import SQLiteDataLayer
+    
+    # 1. Generate a UNIQUE problem_id per run using UUID
+    #    Also generate a semantic label via Groq for display purposes
+    llm = get_llm(temperature=0.0)
+    query = state.get("user_query", "")
+    
+    # Generate a stable semantic label for display
+    canonicalizer_prompt = textwrap.dedent(f"""
+        You are the OmniML Canonicalizer. Your goal is to map a user query to a stable, 2-4 word snake_case ML Problem Label.
+        Ignore all conversational filler like "I need an AI for", "Please build", or "Help me with".
+        FOCUS purely on the core ML task and target domain.
+        
+        Examples:
+        - "I want to predict titanic survival" -> titanic_survival
+        - "Classify insurance fraud in biometric records" -> insurance_fraud_biometrics
+        - "Help me build a breast cancer biopsy diagnostic" -> breast_cancer_biopsy
+        - "Build a house price predictor" -> house_price_prediction
+        
+        User Query: {query}
+        Return ONLY the snake_case label.
+    """).strip()
+    
+    try:
+        res = llm.invoke(canonicalizer_prompt)
+        semantic_label = res.content.strip().lower()
+        semantic_label = re.sub(r'[^a-z0-9_]', '', semantic_label.replace(' ', '_'))
+    except Exception:
+        pure_words = re.findall(r'[a-zA-Z0-9]+', query.lower())
+        semantic_label = "_".join(pure_words[:5]) or "default_problem"
+    
+    # 2. Create a UNIQUE problem_id by appending a short UUID
+    #    This ensures each new conversation/run gets its own identity
+    short_uid = uuid.uuid4().hex[:8]
+    problem_id = f"{semantic_label}_{short_uid}"
+    
+    _safe_log(f"[ml_ops] 🏰 Unique Problem ID: {problem_id} (semantic: {semantic_label})")
+    
+    # 3. No history lookup by semantic label anymore — each run is a fresh pioneer run
+    #    This prevents false "Welcome Back" messages from unrelated previous sessions
+    db = SQLiteDataLayer()
+    
+    return {
+        "problem_id": problem_id,
+        "input_data_version": 1,
+        "delta_state": {}
+    }
+
+def drift_sentry_node(state: AgentState) -> dict:
+    from anomallm.drift import check_feature_drift
+    
+    version = state.get("input_data_version", 1)
+    if version <= 1:
+        # First upload: naturally no drift
+        return {"drift_report": {"status": "no_drift", "features": {}}}
+        
+    delta = state.get("delta_state", {})
+    ref_csv = delta.get("previous_csv_path")
+    cur_csv = state.get("dataset_csv_path")
+    
+    _safe_log(f"[sentry] Performing statistical drift checks vs Reference Data (Version {version-1})...")
+    
+    if not ref_csv or not cur_csv:
+        return {"drift_report": {"status": "error", "reason": "Missing raw CSV payload for comparison"}}
+        
+    report = check_feature_drift(ref_csv, cur_csv)
+    return {"drift_report": report}
+
+def hitl_drift_approval_node(state: AgentState) -> dict:
+    """Interruption boundary. Pause if drift p-value < 0.05"""
+    from langgraph.types import interrupt
+    report = state.get("drift_report", {})
+    if report.get("status") == "drift_detected":
+        choice = interrupt({
+            "action": "drift_approval",
+            "report": report
+        })
+        # choice should be boolean (True = proceed, False = abort/recalibrate)
+        # Assuming UI proceeds on approval
+    return {}
+
+def compare_runs_node(state: AgentState) -> dict:
+    from anomallm.persistence import SQLiteDataLayer
+    from anomallm.comparison import perform_comparative_rag
+    
+    db = SQLiteDataLayer()
+    histories = db.get_run_histories_by_problem(state.get("problem_id", "default_problem"))
+    
+    if len(histories) > 0:
+        llm = get_llm(temperature=0.0)
+        curr_metrics = state.get("metrics", [{}])[-1]
+        curr_report = state.get("final_report", "")
+        comparison = perform_comparative_rag(llm, curr_metrics, curr_report, histories)
+        return {"comparison_report": comparison}
+    
+    return {"comparison_report": "This is the pioneer run for this problem; no historical baselines found."}
+
+def check_drift_condition(state: AgentState) -> str:
+    report = state.get("drift_report", {})
+    if report.get("status") == "drift_detected":
+        return "hitl_drift_approval"
+    return "modality"
+
+def save_run_history_node(state: AgentState) -> dict:
+    from anomallm.persistence import SQLiteDataLayer
+    
+    _safe_log("[ml_ops] 💾 Saving run history to Tier 2 ML persistence...")
+    db = SQLiteDataLayer()
+    
+    mets = state.get("metrics", [])
+    val_acc = "0.0"
+    if mets:
+        val_acc = str(mets[-1].get("val_acc", "0.0"))
+        
+    db.create_run_history(
+        problem_id=state.get("problem_id", "default_problem"),
+        dataset_ref=state.get("selected_dataset", ""),
+        data_version=str(state.get("input_data_version", 1)),
+        dataset_csv_path=state.get("dataset_csv_path", ""),
+        metrics=state.get("metrics", [])[-1] if state.get("metrics") else {},
+        val_accuracy=val_acc,
+        report=state.get("final_report", "")
+    )
+    return {}
+
+# ─────────────────────────────────────────────
 # 9.  Graph Assembly
 # ─────────────────────────────────────────────
 def build_graph() -> StateGraph:
     graph = StateGraph(AgentState)
+    
+    # Core Nodes
     graph.add_node("architect",          architect_node)
     graph.add_node("hitl_model_pause",   hitl_model_pause_node)
     graph.add_node("kaggle_sourcer",     kaggle_sourcer_node)
     graph.add_node("dataset_ranker",     dataset_ranker_node)
     graph.add_node("hitl_pause",         hitl_pause_node)
+    from anomallm.nodes import modality_node, imbalance_node, xai_node
     graph.add_node("dataset_downloader", dataset_downloader_node)
+    graph.add_node("modality",           modality_node)
+    graph.add_node("imbalance",          imbalance_node)
+    graph.add_node("xai_node",           xai_node)
     graph.add_node("eda_analyzer",       eda_analyzer_node)
     graph.add_node("hitl_eda_pause",     hitl_eda_pause_node)
     graph.add_node("execution_choice",   execution_choice_node)
@@ -1795,15 +1686,31 @@ def build_graph() -> StateGraph:
     graph.add_node("arxiv_comparator",   arxiv_comparator_node)
     graph.add_node("model_deployer",     model_deployer_node)
     graph.add_node("evaluator",          evaluator_node)
+    
+    # Tier 2 Nodes
+    graph.add_node("run_history",        run_history_node)
+    graph.add_node("drift_sentry",       drift_sentry_node)
+    graph.add_node("hitl_drift_approval", hitl_drift_approval_node)
+    graph.add_node("save_run_history",   save_run_history_node)
+    graph.add_node("compare_runs",       compare_runs_node)
 
-    graph.set_entry_point("architect")
+    # ── Flow ──
+    graph.set_entry_point("run_history")
+    graph.add_edge("run_history",        "architect")
     graph.add_edge("architect",          "hitl_model_pause")
     graph.add_edge("hitl_model_pause",   "kaggle_sourcer")
     graph.add_edge("kaggle_sourcer",     "dataset_ranker")
     graph.add_edge("dataset_ranker",     "hitl_pause")
     graph.add_edge("hitl_pause",         "dataset_downloader")
-    graph.add_edge("dataset_downloader", "eda_analyzer")
-    graph.add_edge("eda_analyzer",       "hitl_eda_pause")
+    
+    # Drift Check intercept
+    graph.add_edge("dataset_downloader", "drift_sentry")
+    graph.add_conditional_edges("drift_sentry", check_drift_condition, {"hitl_drift_approval": "hitl_drift_approval", "modality": "modality"})
+    graph.add_edge("hitl_drift_approval", "modality")
+    
+    graph.add_edge("modality",           "eda_analyzer")
+    graph.add_edge("eda_analyzer",       "imbalance")
+    graph.add_edge("imbalance",          "hitl_eda_pause")
     graph.add_edge("hitl_eda_pause",     "execution_choice")
     graph.add_edge("execution_choice",   "hpt")
     graph.add_edge("hpt",                "engineer")
@@ -1816,16 +1723,21 @@ def build_graph() -> StateGraph:
     
     graph.add_edge("groq_loopfixer",     "execution_sandbox")
     
-    graph.add_conditional_edges("execution_sandbox", check_execution_success, {"debugger": "debugger", "arxiv_comparator": "arxiv_comparator"})
+    graph.add_conditional_edges("execution_sandbox", check_execution_success, {"debugger": "debugger", "xai_node": "xai_node"})
     graph.add_edge("debugger",           "execution_sandbox")
+    graph.add_edge("xai_node",           "arxiv_comparator")
     graph.add_edge("arxiv_comparator",   "model_deployer")
     graph.add_edge("model_deployer",     "evaluator")
-    graph.add_edge("evaluator",          END)
+    
+    # Tier 2 Closing Flow
+    graph.add_edge("evaluator",          "save_run_history")
+    graph.add_edge("save_run_history",   "compare_runs")
+    graph.add_edge("compare_runs",       END)
 
     from langgraph.checkpoint.memory import MemorySaver
     memory = MemorySaver()
 
     return graph.compile(
         checkpointer=memory,
-        interrupt_before=["hitl_model_pause", "hitl_pause", "execution_choice"],
+        interrupt_before=["hitl_model_pause", "hitl_pause", "hitl_drift_approval", "execution_choice"],
     )

@@ -77,6 +77,16 @@ After training completes, OmniML automatically exports:
 
 ---
 
+## 💎 Tier 2 — Enterprise Features (Subscription)
+
+- **Persistent Database & Run History:** SQLite-backed persistence with unique Problem IDs tracking historical metrics to prevent accuracy leakage across sessions.
+- **Multi-Run Comparison Dashboard:** A dedicated page that lets users select 2–5 past runs and compare them side by side — architecture, dataset, metrics, HPT best params, SHAP top features. Includes a Groq-powered "which model should I use and why" recommendation.
+- **Dataset Versioning & Drift Detection:** When a new version of a dataset is uploaded, OmniML automatically runs a statistical drift report comparing distributions. It flags significant changes before retraining — compliance gold for financial and medical customers.
+- **Scheduled Retraining:** A cron-style interface where users define a retraining trigger (e.g., "retrain every Monday" or "retrain when val accuracy drops below 85%"). OmniML runs the pipeline autonomously and sends a report, transforming it into a true production system.
+- **Team Collaboration:** Shared workspaces where multiple users can see each other's runs, comment on reports, and fork a teammate's architecture into their own session. Built on top of Chainlit's existing auth system.
+
+---
+
 ## 🏗 Architecture
 
 ```
