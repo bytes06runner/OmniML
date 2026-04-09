@@ -1,0 +1,19 @@
+{
+  "run_id": "credit_card_fraud_detection_c7eb2d21",
+  "user_query": "Detect credit card fraud from transaction telemetry",
+  "problem_id": "credit_card_fraud_detection_c7eb2d21",
+  "status": "running",
+  "evidence_version": "1.0",
+  "created_at": "2026-04-08T15:02:14.338320",
+  "updated_at": "2026-04-08T15:02:14.338320",
+  "paths": {
+    "root": "C:\\Users\\mukhe\\Downloads\\OmniML\\runs\\credit_card_fraud_detection_c7eb2d21",
+    "artifacts": "C:\\Users\\mukhe\\Downloads\\OmniML\\runs\\credit_card_fraud_detection_c7eb2d21\\artifacts",
+    "plots": "C:\\Users\\mukhe\\Downloads\\OmniML\\runs\\credit_card_fraud_detection_c7eb2d21\\plots",
+    "reports": "C:\\Users\\mukhe\\Downloads\\OmniML\\runs\\credit_card_fraud_detection_c7eb2d21\\reports",
+    "exports": "C:\\Users\\mukhe\\Downloads\\OmniML\\runs\\credit_card_fraud_detection_c7eb2d21\\exports",
+    "logs": "C:\\Users\\mukhe\\Downloads\\OmniML\\runs\\credit_card_fraud_detection_c7eb2d21\\logs"
+  },
+  "artifact_refs": [],
+  "metadata": {}
+}

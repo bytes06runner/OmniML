@@ -28,6 +28,19 @@ from dotenv import load_dotenv
 from langchain_groq import ChatGroq
 from langgraph.graph import StateGraph, END
 from langgraph.types import interrupt
+from anomallm.runtime import create_run_manifest, ensure_run_paths, load_or_create_bundle, persist_bundle, register_artifact, write_json, write_text
+from anomallm.schemas import DatasetProfile, TrainingArtifacts, BenchmarkArtifacts, FairnessAuditResult, PluginArtifacts, XAIArtifacts
+from anomallm.fairness import run_fairness_audit
+from anomallm.compliance import generate_compliance_reports
+from anomallm.benchmarking import (
+    normalize_task_label,
+    parse_arxiv_results,
+    assess_comparability,
+    build_gap_recommendations,
+    render_benchmark_markdown,
+    BenchmarkSourceManager,
+)
+from anomallm.plugins import PluginRegistry
 
 # ── Safe Logger — prevents OSError [Errno 5] in async Chainlit context ───────
 _logger = logging.getLogger("omniml.graph")
@@ -83,7 +96,7 @@ from tools import (
 load_dotenv()
 kaggle_auth_setup()   # ← Critical: must run before any kaggle call
 
-GROQ_API_KEY = os.environ.get("GROQ_API_KEY", "")
+GROQ_API_KEY = os.environ.get("GROQ_API_KEY", "").strip()
 GROQ_MODEL   = os.environ.get("GROQ_MODEL", "openai/gpt-oss-120b")
 
 
@@ -91,6 +104,8 @@ GROQ_MODEL   = os.environ.get("GROQ_MODEL", "openai/gpt-oss-120b")
 # 1.  Shared State Definition
 # ─────────────────────────────────────────────
 class AgentState(TypedDict):
+    session_id: str
+    run_id: str
     user_query:       str            # Raw user prompt
     architecture:     str            # Text architecture
     graph_architecture_json: dict    # NEW: React Flow JSON (nodes and edges)
@@ -115,17 +130,27 @@ class AgentState(TypedDict):
     hf_results: str
     dataset_metadata: Optional[dict]
     
-    dataset_options:  List[dict]     # [{title, ref, url, source, reason}, ...] 
+    dataset_options:  List[dict]     # [{title, ref, url, source, reason}, ...]
+    dataset_selection_error: Optional[str]
     selected_dataset: str            # The Kaggle/HF ref chosen by the human
     dataset_csv_path:  str            # ← local path to downloaded CSV
+    dataset_download_result: Optional[dict]
+    dataset_validation_result: Optional[dict]
+    dataset_acquisition_error: Optional[dict]
+    execution_validation_result: Optional[dict]
+    code_validation_result: Optional[dict]
+    training_codegen_error: Optional[dict]
     
     eda_data: dict
     eda_narration: str
+    eda_error: Optional[dict]
     training_config: Optional[dict]   # Human-defined training hyperparameters
     
     execution_mode:    str            # ← "local" or "cloud"
     generated_code:    Optional[str]  # Full PyTorch script produced by Engineer
     groq_fixed_code: Optional[str]
+    active_code_source: Optional[str]
+    code_revision: Optional[int]
     execution_success: Optional[bool]
     execution_output: Optional[str]
     
@@ -150,6 +175,14 @@ class AgentState(TypedDict):
     drift_report: Optional[dict]
     performance_decay_triggered: Optional[bool]
     comparison_report: Optional[str]
+    run_manifest: Optional[dict]
+    dataset_profile: Optional[dict]
+    training_artifacts: Optional[dict]
+    xai_artifacts: Optional[dict]
+    fairness_artifacts: Optional[dict]
+    benchmark_artifacts: Optional[dict]
+    compliance_artifacts: Optional[list]
+    plugin_artifacts: Optional[dict]
 
 
 # ─────────────────────────────────────────────
@@ -175,6 +208,8 @@ training_state = {
   "logs": [],
   "status": "running"
 }
+
+MAX_CODEGEN_RETRIES = 3
 
 
 # ─────────────────────────────────────────────
@@ -299,14 +334,14 @@ Adapt node count, units, and output activation to the problem.
 Keep x=300 for all nodes. Increment y by 130 per node.
 """
     
-    client = Groq(api_key=os.environ["GROQ_API_KEY"])
+    client = Groq(api_key=GROQ_API_KEY)
     graph = None
     attempts = 3
     
     for i in range(attempts):
         _safe_log(f"[architect] Synthesizing architecture (attempt {i+1}/{attempts})...")
         resp = client.chat.completions.create(
-            model="openai/gpt-oss-120b",
+            model=GROQ_MODEL,
             messages=[{"role": "user", "content": prompt}],
             temperature=0.2 + (i * 0.2), # Increase temp on retry to get a different result
             max_tokens=2500,
@@ -325,7 +360,7 @@ Keep x=300 for all nodes. Increment y by 130 per node.
                 {"id":"1","type":"customNode","width":220,"height":80,"position":{"x":300,"y":50},"data":{"label":"Input","nodeType":"Input","params":{"shape":"30,"}}},
                 {"id":"2","type":"customNode","width":220,"height":80,"position":{"x":300,"y":200},"data":{"label":"Output","nodeType":"Output","params":{"units":1,"activation":"sigmoid"}}}
             ],
-            "edges": [{"id":"e1-2","source":"1","target":"2","animated":true}],
+            "edges": [{"id":"e1-2","source":"1","target":"2","animated":True}],
             "rationale": "Safe fallback architecture (Linear probe)."
         }
     
@@ -334,6 +369,7 @@ Keep x=300 for all nodes. Increment y by 130 per node.
     cl.user_session.set("architect_graph", graph)
     
     return {
+        "architecture_options": [graph],
         "graph_architecture_json": graph,
         "is_architecture_modified": False,
         "architecture": f"CustomGraph | {graph.get('rationale', '')}"
@@ -345,20 +381,10 @@ Keep x=300 for all nodes. Increment y by 130 per node.
 # ─────────────────────────────────────────────
 def hitl_model_pause_node(state: AgentState) -> dict:
     """
-    Pauses graph execution so Chainlit can render the React Flow visual editor.
+    UI-managed pause barrier.
+    Chainlit resumes this node via update_state(..., as_node="hitl_model_pause").
     """
-    chosen = interrupt({
-        "action": "edit_architecture",
-        "graph_json": state.get("graph_architecture_json", {})
-    })
-    
-    # User clicks sync -> we obtain the new JSON structure
-    # Wait, the interrupt return is whatever `resume()` gets called with. Let's just assume `chosen` is {"graph_architecture_json": {...}}
-    return {
-        "graph_architecture_json": chosen.get("graph_architecture_json", state.get("graph_architecture_json")),
-        "is_architecture_modified": chosen.get("is_architecture_modified", True),
-        "selected_architecture": "custom"
-    }
+    return {}
 
 
 # ─────────────────────────────────────────────
@@ -393,37 +419,100 @@ def huggingface_sourcer_node(state: AgentState) -> dict:
     res = hf_search_tool.invoke({"query": search_query})
     return {"hf_results": res}
 
+
+UNSUPPORTED_TABULAR_KEYWORDS = [
+    "image",
+    "images",
+    "histopath",
+    "histology",
+    "microscopy",
+    "xray",
+    "x-ray",
+    "mri",
+    "ct scan",
+    "dicom",
+    "segmentation",
+    "breakhis",
+]
+
+
+def _annotate_dataset_candidate(candidate: dict) -> dict:
+    annotated = dict(candidate)
+    haystack = " ".join(
+        str(candidate.get(key, "")) for key in ("title", "ref", "description", "url")
+    ).lower()
+    supported = not any(keyword in haystack for keyword in UNSUPPORTED_TABULAR_KEYWORDS)
+    annotated["expected_modality"] = "tabular"
+    annotated["supported_by_current_pipeline"] = supported
+    annotated["reason"] = (
+        "Compatible with the current tabular CSV workflow."
+        if supported
+        else "Excluded because the current v1 workflow supports tabular CSV datasets only."
+    )
+    return annotated
+
+
+def _build_dataset_acquisition_error(kind: str, message: str, ref: str = "") -> dict:
+    return {
+        "kind": kind,
+        "dataset_ref": ref,
+        "message": message,
+    }
+
+
+def _validation_failure(kind: str, message: str, ref: str = "", path: str = "") -> dict:
+    return {
+        "dataset_validation_result": {
+            "status": "failed",
+            "kind": kind,
+            "message": message,
+            "resolved_path": path,
+        },
+        "dataset_acquisition_error": _build_dataset_acquisition_error(kind, message, ref),
+    }
+
 def dataset_ranker_node(state: AgentState) -> dict:
-    """Auto-resolves architecture selection and merges Kaggle & HuggingFace datasets."""
+    """Resolve candidate datasets and keep only tabular-compatible options."""
     import json
     kr = state.get("kaggle_results", "[]")
     
     try: kr_json = json.loads(kr)
     except: kr_json = []
     
-    combined = [c for c in kr_json if "error" not in c]
+    combined = [_annotate_dataset_candidate(c) for c in kr_json if "error" not in c]
     
     arch_full = "Custom Visual Graph" 
     
     if not combined:
         return {
             "architecture": arch_full,
+            "dataset_selection_error": "Kaggle search authentication or network failed.",
             "dataset_options": [{
                 "title": "⚠️ Kaggle Database Search Failed",
                 "ref":   "error/error",
                 "url":   "https://kaggle.com",
                 "source": "kaggle",
-                "reason": "Search authentication or network failed."
+                "reason": "Search authentication or network failed.",
+                "supported_by_current_pipeline": False,
+                "expected_modality": "tabular",
             }]
         }
-        
+
+    supported_candidates = [c for c in combined if c.get("supported_by_current_pipeline")]
+    if not supported_candidates:
+        return {
+            "architecture": arch_full,
+            "dataset_selection_error": "No tabular CSV-compatible datasets were found for the current workflow.",
+            "dataset_options": [],
+        }
+
     llm = get_llm(temperature=0.0)
     prompt = textwrap.dedent(f"""
         User Problem: "{state['user_query']}"
         Available Datasets:
-        {json.dumps(combined, indent=2)}
+        {json.dumps(supported_candidates, indent=2)}
         
-        Rank the top 3 best and most relevant datasets to solve the User Problem.
+        Rank the top 3 best and most relevant tabular CSV-compatible datasets to solve the User Problem.
         Output exactly one valid JSON array of strings containing the 'ref' of the chosen datasets in order of preference.
         Example: ["owner/dataset1", "dataset2", "another-org/dataset3"]
     """).strip()
@@ -432,23 +521,25 @@ def dataset_ranker_node(state: AgentState) -> dict:
     top_refs = _resilient_json_parse(response.content)
     if not top_refs or not isinstance(top_refs, list):
         _safe_log("[dataset_ranker] ⚠️ JSON parse failed for rankings, using fallback first ref.")
-        top_refs = [combined[0]["ref"]] if combined else []
+        top_refs = [supported_candidates[0]["ref"]] if supported_candidates else []
         
     dataset_options = []
     for ref in top_refs[:3]:
-        for c in combined:
+        for c in supported_candidates:
             if c["ref"] == ref:
-                c["reason"] = f"Top selected dataset for '{state['user_query']}'"
-                dataset_options.append(c)
+                chosen = dict(c)
+                chosen["reason"] = f"Top selected dataset for '{state['user_query']}'"
+                dataset_options.append(chosen)
                 break
                 
-    if not dataset_options and combined:
-        c = combined[0]
+    if not dataset_options and supported_candidates:
+        c = dict(supported_candidates[0])
         c["reason"] = "Fallback allocation"
         dataset_options = [c]
 
     return {
         "architecture": arch_full,
+        "dataset_selection_error": None,
         "dataset_options": dataset_options
     }
 
@@ -459,21 +550,16 @@ def dataset_ranker_node(state: AgentState) -> dict:
 # ─────────────────────────────────────────────
 def hitl_pause_node(state: AgentState) -> dict:
     """
-    Pauses graph execution so Chainlit can present dataset buttons to the user.
-    Resumes when the user clicks a button (injecting selected_dataset into state).
+    UI-managed pause barrier.
+    Chainlit resumes this node via update_state(..., as_node="hitl_pause").
     """
-    chosen = interrupt({
-        "action":          "select_dataset",
-        "dataset_options": state["dataset_options"],
-        "architecture":    state["architecture"],
-    })
-    return {"selected_dataset": chosen}
+    return {}
 
 
 # ─────────────────────────────────────────────
 # 5.  Node 2 — Dataset Downloader (NEW — REAL)
 # ─────────────────────────────────────────────
-def dataset_downloader_node(state: AgentState) -> dict:
+def _legacy_dataset_downloader_node_string(state: AgentState) -> dict:
     """
     Downloads the selected Kaggle or HF dataset to disk.
     Stores the absolute local CSV path in state so the Engineer can use it directly.
@@ -494,21 +580,168 @@ def dataset_downloader_node(state: AgentState) -> dict:
     else:
         csv_path = kaggle_download_tool.invoke({"dataset_ref": ref})
 
-    if csv_path.startswith("ERROR"):
+    if isinstance(csv_path, str) and csv_path[:5] == "ERROR":
         _safe_log(f"[downloader] Download failed: {csv_path}")
-        # Fall back to the NASA C-MAPSS data already in the workspace
-        import pathlib
-        fallback = str(pathlib.Path("train_FD001.txt").absolute())
-        _safe_log(f"[downloader] Using NASA C-MAPSS fallback: {fallback}")
-        csv_path = fallback
+        csv_path = ""
 
     _safe_log(f"[downloader] ✅ CSV ready at: {csv_path}")
-    return {"dataset_csv_path": csv_path}
+    dataset_profile = DatasetProfile(
+        source="kaggle" if ref and "/" in ref else "huggingface",
+        dataset_ref=ref or "",
+        csv_path=csv_path,
+        provenance={"summary": f"Downloaded dataset reference: {ref or 'local_upload'}"},
+        lineage={"input_data_version": state.get("input_data_version", 1)},
+    )
+    return {"dataset_csv_path": csv_path, "dataset_profile": dataset_profile.model_dump(mode="json")}
 
 
 # ─────────────────────────────────────────────
 # 5b.  Node — EDA Analyzer (Sprint 5)
 # ─────────────────────────────────────────────
+def dataset_downloader_node(state: AgentState) -> dict:
+    """
+    Download the selected dataset and return a structured acquisition result.
+    """
+    ref = state["selected_dataset"]
+    _safe_log(f"[downloader] Downloading dataset: {ref}")
+
+    source = "kaggle"
+    for opt in state.get("dataset_options", []):
+        if opt.get("ref") == ref:
+            source = opt.get("source", "kaggle")
+            break
+
+    if source == "huggingface":
+        download_result = hf_download_tool.invoke({"dataset_ref": ref})
+    else:
+        download_result = kaggle_download_tool.invoke({"dataset_ref": ref})
+
+    if not isinstance(download_result, dict):
+        download_result = {
+            "status": "download_failed",
+            "source": source,
+            "dataset_ref": ref,
+            "resolved_path": "",
+            "detected_format": "",
+            "error_message": f"Downloader returned unexpected payload: {type(download_result).__name__}",
+        }
+
+    csv_path = download_result.get("resolved_path", "")
+    status = download_result.get("status", "download_failed")
+    if status == "ok":
+        _safe_log(f"[downloader] CSV ready at: {csv_path}")
+    else:
+        _safe_log(f"[downloader] Download failed: {download_result.get('error_message', 'unknown error')}")
+
+    dataset_profile = DatasetProfile(
+        source=download_result.get("source", source),
+        dataset_ref=ref or "",
+        csv_path=csv_path,
+        modality="tabular",
+        provenance={
+            "summary": f"Selected dataset reference: {ref or 'local_upload'}",
+            "download_status": status,
+            "download_error": download_result.get("error_message", ""),
+        },
+        lineage={"input_data_version": state.get("input_data_version", 1)},
+    )
+
+    state_update = {
+        "dataset_csv_path": csv_path,
+        "dataset_download_result": download_result,
+        "dataset_profile": dataset_profile.model_dump(mode="json"),
+    }
+    if status != "ok":
+        state_update["dataset_acquisition_error"] = _build_dataset_acquisition_error(
+            status,
+            download_result.get("error_message", "Dataset download failed."),
+            ref,
+        )
+    return state_update
+
+
+def dataset_validation_node(state: AgentState) -> dict:
+    """
+    Validate that the downloaded artifact exists and is compatible with the v1 tabular flow.
+    """
+    import pandas as pd
+    from pathlib import Path
+
+    ref = state.get("selected_dataset", "")
+    download_result = state.get("dataset_download_result") or {}
+    status = download_result.get("status", "download_failed")
+    if status != "ok":
+        return _validation_failure(
+            status,
+            download_result.get("error_message", "Dataset download failed."),
+            ref,
+            download_result.get("resolved_path", ""),
+        )
+
+    resolved_path = download_result.get("resolved_path", "")
+    if not resolved_path:
+        return _validation_failure("download_failed", "Dataset download did not produce a usable file path.", ref)
+
+    path = Path(resolved_path)
+    if not path.exists():
+        return _validation_failure("download_failed", f"Downloaded file was not found on disk: {resolved_path}", ref, resolved_path)
+
+    suffix = path.suffix.lower()
+    if suffix not in {".csv", ".tsv"}:
+        return _validation_failure(
+            "unsupported_format",
+            f"Downloaded artifact is '{suffix or 'unknown'}', but the current workflow supports tabular CSV-compatible datasets only.",
+            ref,
+            resolved_path,
+        )
+
+    try:
+        sample = pd.read_csv(path, sep=None, engine="python", nrows=100)
+    except Exception as exc:
+        return _validation_failure(
+            "unsupported_format",
+            f"Dataset could not be parsed as tabular CSV input: {exc}",
+            ref,
+            resolved_path,
+        )
+
+    if sample.empty or len(sample.columns) == 0:
+        return _validation_failure(
+            "unsupported_format",
+            "Dataset parsed successfully but contained no usable tabular columns.",
+            ref,
+            resolved_path,
+        )
+
+    dataset_profile = DatasetProfile.model_validate(state.get("dataset_profile") or {})
+    dataset_profile.csv_path = resolved_path
+    dataset_profile.modality = "tabular"
+    dataset_profile.col_count = len(sample.columns)
+    dataset_profile.columns = [str(col) for col in sample.columns]
+
+    return {
+        "dataset_csv_path": resolved_path,
+        "dataset_profile": dataset_profile.model_dump(mode="json"),
+        "dataset_validation_result": {
+            "status": "ok",
+            "kind": "tabular_csv",
+            "resolved_path": resolved_path,
+            "detected_modality": "tabular",
+            "detected_format": suffix.lstrip("."),
+            "column_count": len(sample.columns),
+            "sample_row_count": len(sample),
+        },
+        "dataset_acquisition_error": None,
+    }
+
+
+def check_dataset_validation_status(state: AgentState) -> str:
+    validation = state.get("dataset_validation_result") or {}
+    if validation.get("status") == "ok":
+        return "continue"
+    return "retry_dataset_selection"
+
+
 def eda_analyzer_node(state: AgentState) -> dict:
     """
     Profile the dataset (Stats, Bins, Corr) and generate AI narration.
@@ -527,7 +760,11 @@ def eda_analyzer_node(state: AgentState) -> dict:
                   detail="CSV file not found on disk.", pct=0)
         with _eda_lock:
             _eda_done[session_id] = True
-        return {"eda_data": {}, "eda_narration": "Data source not found."}
+        return {
+            "eda_data": {},
+            "eda_narration": "Data source not found.",
+            "eda_error": {"path": csv_path or "", "message": "CSV file not found on disk."},
+        }
 
     # ── Clear previous run ──────────────────────────────────────────────────
     with _eda_lock:
@@ -551,7 +788,11 @@ def eda_analyzer_node(state: AgentState) -> dict:
                   detail=str(e), pct=0)
         with _eda_lock:
             _eda_done[session_id] = True
-        return {"eda_data": {}, "eda_narration": f"Error reading data: {e}"}
+        return {
+            "eda_data": {},
+            "eda_narration": f"Error reading data: {e}",
+            "eda_error": {"path": csv_path, "message": str(e)},
+        }
 
     # ── Step 2: Sample for Speed ────────────────────────────────────────────
     _eda_emit(session_id, "sample", "Sampling Data", status="running",
@@ -682,8 +923,7 @@ def eda_analyzer_node(state: AgentState) -> dict:
     with _eda_lock:
         _eda_done[session_id] = True
 
-    return {
-        "eda_data": {
+    eda_payload = {
             "columns":       df.columns.tolist(),
             "row_count":     len(df),
             "col_count":     len(df.columns),
@@ -693,8 +933,24 @@ def eda_analyzer_node(state: AgentState) -> dict:
             "missing":       missing_report,
             "outliers":      outlier_report,
             "top_corrs":     top_corrs[:10],
-        },
-        "eda_narration": narration
+        }
+    bundle = load_or_create_bundle(state)
+    dataset_profile = DatasetProfile.model_validate(state.get("dataset_profile") or {})
+    dataset_profile.row_count = len(df)
+    dataset_profile.col_count = len(df.columns)
+    dataset_profile.columns = df.columns.tolist()
+    dataset_profile.missing = missing_report
+    dataset_profile.top_correlations = top_corrs[:10]
+    dataset_profile.detected_sensitive_features = [col for col in df.columns if any(token in col.lower() for token in ("gender", "sex", "race", "ethnicity", "age"))]
+    profile_path = os.path.join(bundle.run_manifest.paths["artifacts"], "dataset_profile.json")
+    write_json(profile_path, dataset_profile.model_dump(mode="json"))
+    register_artifact(bundle.run_manifest, "dataset_profile", "dataset_profile", profile_path)
+
+    return {
+        "eda_data": eda_payload,
+        "eda_narration": narration,
+        "dataset_profile": dataset_profile.model_dump(mode="json"),
+        "run_manifest": bundle.run_manifest.model_dump(mode="json"),
     }
 
 
@@ -703,13 +959,9 @@ def eda_analyzer_node(state: AgentState) -> dict:
 # ─────────────────────────────────────────────
 def hitl_eda_pause_node(state: AgentState) -> dict:
     """
-    Pauses so the user can explore the interactive EDA dashboard.
+    UI-managed pause barrier.
+    Chainlit resumes this node via update_state(..., as_node="hitl_eda_pause").
     """
-    interrupt({
-        "action":    "show_eda_dashboard",
-        "eda_data":  state["eda_data"],
-        "narration": state["eda_narration"]
-    })
     return {}
 
 
@@ -718,14 +970,10 @@ def hitl_eda_pause_node(state: AgentState) -> dict:
 # ─────────────────────────────────────────────
 def execution_choice_node(state: AgentState) -> dict:
     """
-    Pauses graph execution so the user can choose between local or cloud execution.
+    UI-managed pause barrier.
+    Chainlit resumes this node via update_state(..., as_node="execution_choice").
     """
-    choice = interrupt({
-        "action": "select_execution_mode",
-        "options": ["local", "cloud"],
-        "architecture": state["architecture"].split("|")[0].strip()
-    })
-    return {"execution_mode": choice}
+    return {}
 
 
 # ─────────────────────────────────────────────
@@ -806,6 +1054,30 @@ def _validate_and_fix_syntax(code: str, llm, max_attempts: int = 3) -> str:
                 _safe_log(f"[syntax-fix] LLM call failed: {e}")
                 break
     return code  # return best effort
+
+
+def _validate_code_contract(script: str) -> dict:
+    import ast
+
+    if not script or not script.strip():
+        return {"status": "failed", "message": "Generated training code is empty."}
+
+    try:
+        ast.parse(script)
+    except SyntaxError as exc:
+        return {
+            "status": "failed",
+            "message": f"Generated training code is not valid Python: {exc.msg} at line {exc.lineno}",
+        }
+
+    required_markers = ('"type":"epoch_metric"', '"type": "epoch_metric"', "epoch_metric")
+    if not any(marker in script for marker in required_markers):
+        return {
+            "status": "failed",
+            "message": "Generated training code does not emit required epoch metrics.",
+        }
+
+    return {"status": "ok", "message": "Generated training code parsed successfully and preserves required telemetry."}
 
 
 # ─────────────────────────────────────────────
@@ -893,8 +1165,16 @@ def groq_loopfixer_node(state: AgentState) -> dict:
     script = state.get("generated_code", "")
     if not script:
         return {}
-    # Template-generated code is always valid — pass through directly
-    return {"groq_fixed_code": script}
+    validation = _validate_code_contract(script)
+    revision = int(state.get("code_revision") or 0) + 1
+    return {
+        "generated_code": script,
+        "groq_fixed_code": None,
+        "active_code_source": "loopfixer",
+        "code_revision": revision,
+        "code_validation_result": validation,
+        "training_codegen_error": None,
+    }
 
 # ─────────────────────────────────────────────
 # 7.  Execution Sandbox
@@ -911,16 +1191,27 @@ async def execution_sandbox_node(state: AgentState) -> dict:
     training_state["total_epochs"] = int(tc.get("epochs", 50))
     
     import ast
-    script = state.get("groq_fixed_code", "") or state.get("generated_code", "")
+    script = state.get("generated_code", "") or state.get("groq_fixed_code", "")
+    code_source = state.get("active_code_source") or ("generated_code" if state.get("generated_code") else "groq_fixed_code")
+    code_revision = int(state.get("code_revision") or 0)
     if not script or not script.strip():
         return {
             **state,
             "training_logs": "ERROR: Engineer agent did not produce code.",
-            "metrics": []
+            "metrics": [],
+            "execution_validation_result": {
+                "status": "failed",
+                "message": "Engineer agent did not produce executable code.",
+            },
+            "code_validation_result": {"status": "failed", "message": "Engineer agent did not produce executable code."},
         }
+
+    _safe_log(f"[sandbox] Executing code source={code_source} revision={code_revision}")
 
     # — PRE-FLIGHT: AST syntax check before writing to disk —
     llm_for_fix = get_llm(temperature=0.0)
+    preflight_source = code_source
+    preflight_revision = code_revision
     try:
         ast.parse(script)
     except SyntaxError as se:
@@ -929,10 +1220,22 @@ async def execution_sandbox_node(state: AgentState) -> dict:
         try:
             ast.parse(script)
             _safe_log("[sandbox] Pre-flight syntax repair succeeded.")
+            preflight_source = "sandbox_preflight"
+            preflight_revision = code_revision + 1
         except SyntaxError as se2:
             err = f"FATAL SyntaxError after repair: {se2.msg} at line {se2.lineno}"
             _safe_log(f"[sandbox] {err}")
-            return {**state, "training_logs": err, "metrics": []}
+            return {
+                **state,
+                "training_logs": err,
+                "metrics": [],
+                "execution_validation_result": {
+                    "status": "failed",
+                    "message": err,
+                },
+                "code_validation_result": {"status": "failed", "message": err},
+                "training_codegen_error": {"status": "failed", "message": err},
+            }
 
 
 
@@ -1019,7 +1322,63 @@ async def execution_sandbox_node(state: AgentState) -> dict:
         try: os.remove(tmp_path)
         except: pass
 
-    return {"training_logs": logs, "metrics": metrics_list if 'metrics_list' in locals() else []}
+    bundle = load_or_create_bundle(state)
+    paths = ensure_run_paths(bundle.run_manifest.run_id)
+    logs_path = os.path.join(paths.logs, "training.log")
+    write_text(logs_path, logs)
+
+    metrics_list = metrics_list if 'metrics_list' in locals() else []
+    artifact_metrics = metrics_list[-1] if metrics_list else {}
+    training_artifacts = TrainingArtifacts.model_validate(state.get("training_artifacts") or {})
+    training_artifacts.training_logs_path = logs_path
+    training_artifacts.metrics = artifact_metrics
+    training_artifacts.training_config = state.get("training_config") or {}
+    training_artifacts.predictions_path = os.path.join(paths.artifacts, "predictions.csv")
+    training_artifacts.evaluation_path = os.path.join(paths.artifacts, "evaluation.json")
+    training_artifacts.export_paths = {
+        "model": os.path.join(paths.exports, "model.pt"),
+        "scripted": os.path.join(paths.exports, "model_scripted.pt"),
+        "onnx": os.path.join(paths.exports, "model.onnx"),
+        "meta": os.path.join(paths.exports, "model_meta.json"),
+    }
+    training_artifacts.plots = {
+        "loss_curve": os.path.join(paths.plots, "loss_curve.png"),
+        "feature_correlation": os.path.join(paths.plots, "telemetry_distribution.png"),
+        "shap_importance": os.path.join(paths.plots, "shap_importance.png"),
+    }
+    if os.path.exists(training_artifacts.evaluation_path):
+        try:
+            with open(training_artifacts.evaluation_path, "r", encoding="utf-8") as handle:
+                evaluation_payload = json.load(handle)
+            training_artifacts.model_card = {
+                "target_column": evaluation_payload.get("target_column"),
+                "feature_names": evaluation_payload.get("feature_columns", []),
+                "top_features": evaluation_payload.get("feature_importance", []),
+            }
+            training_artifacts.best_params = state.get("hpt_best_params") or {}
+            training_artifacts.task_type = evaluation_payload.get("metrics", {}).get("task_type", "unknown")
+        except Exception:
+            pass
+    register_artifact(bundle.run_manifest, "training_log", "log", logs_path)
+    return {
+        "generated_code": script,
+        "groq_fixed_code": None,
+        "active_code_source": preflight_source,
+        "code_revision": preflight_revision,
+        "code_validation_result": _validate_code_contract(script),
+        "training_logs": logs,
+        "metrics": metrics_list,
+        "execution_validation_result": {
+            "status": "ok" if metrics_list else "failed",
+            "message": (
+                "Training execution produced epoch metrics."
+                if metrics_list
+                else "Training execution completed without emitting required epoch metrics."
+            ),
+        },
+        "run_manifest": bundle.run_manifest.model_dump(mode="json"),
+        "training_artifacts": training_artifacts.model_dump(mode="json"),
+    }
 
 
 # ─────────────────────────────────────────────
@@ -1027,46 +1386,107 @@ async def execution_sandbox_node(state: AgentState) -> dict:
 # ─────────────────────────────────────────────
 def debugger_node(state: AgentState) -> dict:
     """
-    Reads the Traceback from training_logs and the crashed generated_code.
-    Ask the LLM to patch it.
+    Regenerate the deterministic training template and validate it.
     """
-    import json
-    llm = get_llm(temperature=0.0)
-    
-    logs     = state.get("training_logs", "")
-    code     = state.get("generated_code", "")
-    tc       = state.get("training_config") or {}
-    
-    # Truncate logs to last 3000 chars to avoid exceeding context
-    logs_tail = logs[-3000:] if len(logs) > 3000 else logs
-    # Truncate code context too
-    code_tail = code[-6000:] if len(code) > 6000 else code
-    
-    prompt = (
-        "You are an elite autonomous debugging agent.\n"
-        "The previous training script crashed. Fix it COMPLETELY.\n\n"
-        "=== ERROR (last 3000 chars) ===\n" + logs_tail + "\n\n"
-        "=== SCRIPT ===\n" + code_tail + "\n\n"
-        "=== TRAINING CONFIG ===\n" + json.dumps(tc, indent=2) + "\n\n"
-        "MANDATORY RULES:\n"
-        "1. Output ONLY raw Python. No markdown. No explanation.\n"
-        "2. The script MUST be COMPLETE — no truncation. It must end with a valid statement.\n"
-        "3. Keep all imports and data loading.\n"
-        "4. The final training loop MUST emit epoch_metric JSON per epoch:\n"
-        '   print(json.dumps({"type": "epoch_metric", "epoch": epoch+1, "loss": float(train_loss), "val_loss": float(val_loss), "acc": float(train_acc), "val_acc": float(val_acc)}), flush=True)\n'
-        "5. Do NOT change the user hyperparameters.\n"
-    )
-    
-    response = llm.invoke(prompt)
-    new_code = _strip_code_fences(response.content)
-    new_code = _validate_and_fix_syntax(new_code, llm)
-    
-    
+    from anomallm.engineer import engineer_node as deterministic_engineer_node
+
+    regenerated = deterministic_engineer_node(state)
+    new_code = regenerated.get("generated_code", "")
+    validation = _validate_code_contract(new_code)
+    revision = int(state.get("code_revision") or 0) + 1
+    failure_message = validation.get("message", "Deterministic debugger regeneration produced invalid code.")
 
     return {
         "generated_code": new_code,
+        "groq_fixed_code": None,
+        "active_code_source": "debugger",
+        "code_revision": revision,
         "retry_count": state.get("retry_count", 0) + 1,
-        "training_logs": ""
+        "training_logs": "",
+        "code_validation_result": validation,
+        "execution_validation_result": None,
+        "training_codegen_error": (
+            None if validation.get("status") == "ok"
+            else {"status": "failed", "message": failure_message}
+        ),
+    }
+
+
+def codegen_contract_validator_node(state: AgentState) -> dict:
+    """Ensure generated code still emits required training telemetry before execution."""
+    script = state.get("generated_code", "") or state.get("groq_fixed_code", "")
+    validation = _validate_code_contract(script)
+    failure_message = validation.get("message", "Generated training code failed validation.")
+    return {
+        "code_validation_result": validation,
+        "training_codegen_error": (
+            None if validation.get("status") == "ok"
+            else {"status": "failed", "message": failure_message}
+        ),
+        "training_logs": (
+            state.get("training_logs", "")
+            if validation.get("status") == "ok"
+            else f"ERROR: {failure_message}"
+        ),
+    }
+
+
+def validate_execution_output_node(state: AgentState) -> dict:
+    """Validate training outputs before downstream analytics/reporting."""
+    metrics = state.get("metrics") or []
+    required_metric_keys = {"epoch", "loss", "val_loss", "acc", "val_acc"}
+
+    if not metrics:
+        return {
+            "execution_validation_result": {
+                "status": "failed",
+                "message": "Training execution completed without emitting required epoch metrics.",
+            },
+            "training_logs": (
+                (state.get("training_logs", "") + "\n") if state.get("training_logs") else ""
+            ) + "ERROR: Training execution completed without emitting required epoch metrics.",
+        }
+
+    last_metric = metrics[-1]
+    missing_keys = sorted(required_metric_keys - set(last_metric.keys()))
+    if missing_keys:
+        return {
+            "execution_validation_result": {
+                "status": "failed",
+                "message": (
+                    "Training metrics are missing required keys: " + ", ".join(missing_keys)
+                ),
+            },
+            "training_logs": (
+                (state.get("training_logs", "") + "\n") if state.get("training_logs") else ""
+            ) + "ERROR: Training metrics are missing required keys.",
+        }
+
+    run_id = state.get("run_id", "")
+    required_artifacts = [
+        os.path.join(os.getcwd(), "runs", run_id, "artifacts", "metrics.json"),
+        os.path.join(os.getcwd(), "runs", run_id, "artifacts", "evaluation.json"),
+    ]
+    missing_artifacts = [os.path.basename(path) for path in required_artifacts if not os.path.exists(path)]
+    if missing_artifacts:
+        return {
+            "execution_validation_result": {
+                "status": "failed",
+                "message": (
+                    "Training execution completed but required artifacts are missing: "
+                    + ", ".join(missing_artifacts)
+                ),
+            },
+            "training_logs": (
+                (state.get("training_logs", "") + "\n") if state.get("training_logs") else ""
+            ) + "ERROR: Training execution completed but required artifacts are missing.",
+        }
+
+    return {
+        "execution_validation_result": {
+            "status": "ok",
+            "message": "Training execution produced usable metrics and artifacts.",
+        }
     }
 
 
@@ -1520,8 +1940,28 @@ def check_execution_success(state: AgentState) -> str:
         # Also catch SyntaxError at top level
         if logs.strip().startswith("SyntaxError") or "\nSyntaxError" in logs:
             return "debugger"
+        if not (state.get("metrics") or []):
+            return "debugger"
             
-    return "xai_node"
+    return "execution_output_validator"
+
+
+def check_execution_validation_status(state: AgentState) -> str:
+    validation = state.get("execution_validation_result") or {}
+    if validation.get("status") == "ok":
+        return "continue"
+    if state.get("retry_count", 0) >= MAX_CODEGEN_RETRIES:
+        return "execution_failure"
+    return "debugger"
+
+
+def check_codegen_validation_status(state: AgentState) -> str:
+    validation = state.get("code_validation_result") or {}
+    if validation.get("status") == "ok":
+        return "continue"
+    if state.get("retry_count", 0) >= MAX_CODEGEN_RETRIES:
+        return "execution_failure"
+    return "debugger"
 
 def check_engineer_code(state: AgentState) -> str:
     generated_code = state.get("generated_code")
@@ -1574,11 +2014,19 @@ def run_history_node(state: AgentState) -> dict:
     # 3. No history lookup by semantic label anymore — each run is a fresh pioneer run
     #    This prevents false "Welcome Back" messages from unrelated previous sessions
     db = SQLiteDataLayer()
-    
+    run_id = problem_id
+    manifest = create_run_manifest(run_id, query, problem_id)
+    plugin_registry = PluginRegistry()
+    enabled_plugins = ((state.get("training_config") or {}).get("plugin_config") or {}).get("enabled_plugins") or []
+    plugin_artifacts = plugin_registry.execute_slot("pre_run", state, enabled_plugins=enabled_plugins).model_dump(mode="json")
+
     return {
+        "run_id": run_id,
         "problem_id": problem_id,
         "input_data_version": 1,
-        "delta_state": {}
+        "delta_state": {},
+        "run_manifest": manifest.model_dump(mode="json"),
+        "plugin_artifacts": plugin_artifacts,
     }
 
 def drift_sentry_node(state: AgentState) -> dict:
@@ -1602,16 +2050,7 @@ def drift_sentry_node(state: AgentState) -> dict:
     return {"drift_report": report}
 
 def hitl_drift_approval_node(state: AgentState) -> dict:
-    """Interruption boundary. Pause if drift p-value < 0.05"""
-    from langgraph.types import interrupt
-    report = state.get("drift_report", {})
-    if report.get("status") == "drift_detected":
-        choice = interrupt({
-            "action": "drift_approval",
-            "report": report
-        })
-        # choice should be boolean (True = proceed, False = abort/recalibrate)
-        # Assuming UI proceeds on approval
+    """UI-managed pause barrier for drift approval."""
     return {}
 
 def compare_runs_node(state: AgentState) -> dict:
@@ -1620,15 +2059,45 @@ def compare_runs_node(state: AgentState) -> dict:
     
     db = SQLiteDataLayer()
     histories = db.get_run_histories_by_problem(state.get("problem_id", "default_problem"))
+    metrics = state.get("metrics") or []
+
+    if not metrics:
+        return {
+            "comparison_report": (
+                "Comparison skipped because the current run did not produce usable training metrics."
+            )
+        }
     
     if len(histories) > 0:
         llm = get_llm(temperature=0.0)
-        curr_metrics = state.get("metrics", [{}])[-1]
+        curr_metrics = metrics[-1]
         curr_report = state.get("final_report", "")
         comparison = perform_comparative_rag(llm, curr_metrics, curr_report, histories)
         return {"comparison_report": comparison}
     
     return {"comparison_report": "This is the pioneer run for this problem; no historical baselines found."}
+
+
+def execution_failure_node(state: AgentState) -> dict:
+    error = state.get("training_codegen_error") or {}
+    message = error.get("message") or "Training code generation failed after the maximum retry budget."
+    retries = state.get("retry_count", 0)
+    source = state.get("active_code_source", "unknown")
+    revision = state.get("code_revision", 0)
+    return {
+        "training_codegen_error": {
+            "status": "failed",
+            "message": message,
+        },
+        "final_report": (
+            "## Training Code Generation Error\n\n"
+            f"{message}\n\n"
+            f"- Retry count: `{retries}`\n"
+            f"- Active code source: `{source}`\n"
+            f"- Code revision: `{revision}`\n\n"
+            "The training pipeline stopped after exhausting the automatic repair budget."
+        ),
+    }
 
 def check_drift_condition(state: AgentState) -> str:
     report = state.get("drift_report", {})
@@ -1654,15 +2123,181 @@ def save_run_history_node(state: AgentState) -> dict:
         dataset_csv_path=state.get("dataset_csv_path", ""),
         metrics=state.get("metrics", [])[-1] if state.get("metrics") else {},
         val_accuracy=val_acc,
-        report=state.get("final_report", "")
+        report=state.get("final_report", ""),
+        run_manifest=state.get("run_manifest") or {},
+        artifact_index={
+            "dataset_profile": state.get("dataset_profile"),
+            "training_artifacts": state.get("training_artifacts"),
+            "xai_artifacts": state.get("xai_artifacts"),
+            "fairness_artifacts": state.get("fairness_artifacts"),
+            "benchmark_artifacts": state.get("benchmark_artifacts"),
+            "compliance_artifacts": state.get("compliance_artifacts"),
+        },
+        template_types=[report.get("template_id") for report in (state.get("compliance_artifacts") or []) if isinstance(report, dict)],
     )
     return {}
+
+
+def evaluator_node(state: AgentState) -> dict:
+    """Assemble the primary markdown report from deterministic evidence artifacts."""
+    bundle = load_or_create_bundle(state)
+    bundle.dataset_profile = DatasetProfile.model_validate(state.get("dataset_profile") or {})
+    bundle.training_artifacts = TrainingArtifacts.model_validate(state.get("training_artifacts") or {})
+    report_lines = [
+        "# OmniML Autonomous ML Run Report",
+        "",
+        "## Architecture Selection",
+        "",
+        f"- User query: {state.get('user_query', '')}",
+        f"- Architecture: {state.get('architecture_desc') or state.get('architecture', 'N/A')}",
+        f"- Dataset: {state.get('selected_dataset', 'N/A')}",
+        "",
+        "## Training Summary",
+        "",
+        f"- Metrics: {json.dumps(bundle.training_artifacts.metrics, indent=2) if bundle.training_artifacts.metrics else 'No metrics recorded.'}",
+        f"- Best params: {json.dumps(bundle.training_artifacts.best_params, indent=2) if bundle.training_artifacts.best_params else 'No HPT params recorded.'}",
+        "",
+        "## Explainability",
+        "",
+        state.get("xai_report", "XAI analysis skipped."),
+        "",
+        "## Benchmarking",
+        "",
+        state.get("arxiv_benchmarks", "Benchmark analysis skipped."),
+        "",
+        "## Verdict",
+        "",
+        "Evidence-backed run summary generated from run-scoped artifacts. Review compliance attachments for regulated deployment contexts.",
+    ]
+    final_report = "\n".join(report_lines)
+    report_path = os.path.join(bundle.run_manifest.paths["reports"], "final_report.md")
+    write_text(report_path, final_report)
+    register_artifact(bundle.run_manifest, "final_report", "report_markdown", report_path)
+    return {"final_report": final_report, "run_manifest": bundle.run_manifest.model_dump(mode="json")}
+
+
+def fairness_auditor_node(state: AgentState) -> dict:
+    bundle = load_or_create_bundle(state)
+    paths = ensure_run_paths(bundle.run_manifest.run_id)
+    config = (state.get("training_config") or {}).get("fairness_config") or {}
+    result = run_fairness_audit(
+        state.get("dataset_csv_path", ""),
+        os.path.join(paths.artifacts, "predictions.csv"),
+        paths.artifacts,
+        config=config,
+    )
+    register_artifact(bundle.run_manifest, "fairness_summary", "fairness", result.summary_path or os.path.join(paths.artifacts, "fairness_summary.json"))
+    return {
+        "fairness_artifacts": result.model_dump(mode="json"),
+        "run_manifest": bundle.run_manifest.model_dump(mode="json"),
+    }
+
+
+def evidence_collector_node(state: AgentState) -> dict:
+    bundle = load_or_create_bundle(state)
+    bundle.dataset_profile = DatasetProfile.model_validate(state.get("dataset_profile") or {})
+    bundle.training_artifacts = TrainingArtifacts.model_validate(state.get("training_artifacts") or {})
+    if state.get("xai_artifacts"):
+        bundle.xai_artifacts = XAIArtifacts.model_validate(state.get("xai_artifacts"))
+    if state.get("fairness_artifacts"):
+        bundle.fairness_artifacts = FairnessAuditResult.model_validate(state.get("fairness_artifacts"))
+    if state.get("benchmark_artifacts"):
+        bundle.benchmark_artifacts = BenchmarkArtifacts.model_validate(state.get("benchmark_artifacts"))
+    if state.get("plugin_artifacts"):
+        bundle.plugin_artifacts = PluginArtifacts.model_validate(state.get("plugin_artifacts"))
+    registry = PluginRegistry()
+    enabled_plugins = ((state.get("training_config") or {}).get("plugin_config") or {}).get("enabled_plugins") or []
+    bundle.plugin_artifacts = registry.execute_slot("evidence_provider", state, bundle.plugin_artifacts, enabled_plugins=enabled_plugins)
+    persist_bundle(bundle)
+    return {
+        "run_manifest": bundle.run_manifest.model_dump(mode="json"),
+        "plugin_artifacts": bundle.plugin_artifacts.model_dump(mode="json"),
+    }
+
+
+def compliance_mapper_node(state: AgentState) -> dict:
+    training_config = state.get("training_config") or {}
+    compliance_modes = training_config.get("compliance_modes") or ["eu_ai_act", "fda_samd", "soc2"]
+    return {"compliance_modes": compliance_modes}
+
+
+def compliance_narrative_node(state: AgentState) -> dict:
+    fairness_status = (state.get("fairness_artifacts") or {}).get("status", "not_available")
+    narrative = (
+        f"Compliance narratives are evidence-backed overlays. Fairness status for this run: {fairness_status}. "
+        "Any missing evidence is disclosed explicitly in the rendered templates."
+    )
+    return {"compliance_narrative": narrative}
+
+
+def compliance_renderer_node(state: AgentState) -> dict:
+    bundle = load_or_create_bundle(state)
+    bundle.dataset_profile = DatasetProfile.model_validate(state.get("dataset_profile") or {})
+    bundle.training_artifacts = TrainingArtifacts.model_validate(state.get("training_artifacts") or {})
+    if state.get("xai_artifacts"):
+        bundle.xai_artifacts = XAIArtifacts.model_validate(state.get("xai_artifacts"))
+    if state.get("fairness_artifacts"):
+        bundle.fairness_artifacts = FairnessAuditResult.model_validate(state.get("fairness_artifacts"))
+    if state.get("benchmark_artifacts"):
+        bundle.benchmark_artifacts = BenchmarkArtifacts.model_validate(state.get("benchmark_artifacts"))
+    report_templates = state.get("compliance_modes") or ["eu_ai_act", "fda_samd", "soc2"]
+    reports = generate_compliance_reports(bundle, report_templates)
+    bundle.compliance_artifacts = reports
+    persist_bundle(bundle)
+    return {
+        "compliance_artifacts": [report.model_dump(mode="json") for report in reports],
+        "run_manifest": bundle.run_manifest.model_dump(mode="json"),
+    }
+
+
+def arxiv_comparator_node(state: AgentState) -> dict:
+    """Build benchmark evidence from Papers With Code plus ArXiv context."""
+    global training_state
+    training_state["logs"].append("Benchmark comparison running...")
+    query = normalize_task_label(state.get("user_query", ""), state.get("selected_dataset", ""), state.get("modality", "tabular"))
+    literature_raw = arxiv_search_tool.invoke(query.task_label)
+    benchmark_config = (state.get("training_config") or {}).get("benchmark_config") or {}
+    manager = BenchmarkSourceManager(
+        timeout_seconds=int(benchmark_config.get("source_timeout_seconds", 10)),
+        cache_ttl_days=int(benchmark_config.get("cache_ttl_days", 7)),
+    )
+    benchmark_artifacts = manager.resolve(
+        query,
+        literature_raw,
+        mode=benchmark_config.get("mode", "prefer_live_then_cache"),
+    )
+    papers = benchmark_artifacts.cited_papers
+    current_metrics = state.get("training_artifacts", {}).get("metrics") or (state.get("metrics", [{}])[-1] if state.get("metrics") else {})
+    comparability = assess_comparability(query, current_metrics, benchmark_artifacts.leaderboard_entries, state.get("selected_dataset", ""))
+    recommendations = build_gap_recommendations(comparability, papers, query.task_label)
+    benchmark_artifacts.query = query
+    benchmark_artifacts.comparability = comparability
+    benchmark_artifacts.recommendations = recommendations
+    benchmark_artifacts.rendered_markdown = render_benchmark_markdown(benchmark_artifacts)
+    bundle = load_or_create_bundle(state)
+    benchmark_path = os.path.join(bundle.run_manifest.paths["artifacts"], "benchmark_summary.json")
+    write_json(benchmark_path, benchmark_artifacts.model_dump(mode="json"))
+    register_artifact(bundle.run_manifest, "benchmark_summary", "benchmark", benchmark_path)
+    return {
+        "arxiv_benchmarks": benchmark_artifacts.rendered_markdown,
+        "benchmark_artifacts": benchmark_artifacts.model_dump(mode="json"),
+        "run_manifest": bundle.run_manifest.model_dump(mode="json"),
+    }
 
 # ─────────────────────────────────────────────
 # 9.  Graph Assembly
 # ─────────────────────────────────────────────
 def build_graph() -> StateGraph:
     graph = StateGraph(AgentState)
+    # These nodes are UI-managed pause barriers. The app resumes them via
+    # update_state(..., as_node="<pause_node>"), so they must not call interrupt().
+    UI_MANAGED_INTERRUPTS = [
+        "hitl_model_pause",
+        "hitl_pause",
+        "hitl_eda_pause",
+        "hitl_drift_approval",
+        "execution_choice",
+    ]
     
     # Core Nodes
     graph.add_node("architect",          architect_node)
@@ -1672,6 +2307,7 @@ def build_graph() -> StateGraph:
     graph.add_node("hitl_pause",         hitl_pause_node)
     from anomallm.nodes import modality_node, imbalance_node, xai_node
     graph.add_node("dataset_downloader", dataset_downloader_node)
+    graph.add_node("dataset_validation", dataset_validation_node)
     graph.add_node("modality",           modality_node)
     graph.add_node("imbalance",          imbalance_node)
     graph.add_node("xai_node",           xai_node)
@@ -1681,11 +2317,19 @@ def build_graph() -> StateGraph:
     graph.add_node("hpt",                hpt_node)
     graph.add_node("engineer",           engineer_node)
     graph.add_node("groq_loopfixer",     groq_loopfixer_node)
+    graph.add_node("codegen_contract_validator", codegen_contract_validator_node)
     graph.add_node("execution_sandbox",  execution_sandbox_node)
+    graph.add_node("execution_output_validator", validate_execution_output_node)
     graph.add_node("debugger",           debugger_node)
+    graph.add_node("execution_failure",  execution_failure_node)
     graph.add_node("arxiv_comparator",   arxiv_comparator_node)
     graph.add_node("model_deployer",     model_deployer_node)
     graph.add_node("evaluator",          evaluator_node)
+    graph.add_node("fairness_auditor",   fairness_auditor_node)
+    graph.add_node("evidence_collector", evidence_collector_node)
+    graph.add_node("compliance_mapper",  compliance_mapper_node)
+    graph.add_node("compliance_narrative", compliance_narrative_node)
+    graph.add_node("compliance_renderer", compliance_renderer_node)
     
     # Tier 2 Nodes
     graph.add_node("run_history",        run_history_node)
@@ -1704,7 +2348,12 @@ def build_graph() -> StateGraph:
     graph.add_edge("hitl_pause",         "dataset_downloader")
     
     # Drift Check intercept
-    graph.add_edge("dataset_downloader", "drift_sentry")
+    graph.add_edge("dataset_downloader", "dataset_validation")
+    graph.add_conditional_edges(
+        "dataset_validation",
+        check_dataset_validation_status,
+        {"retry_dataset_selection": "hitl_pause", "continue": "drift_sentry"}
+    )
     graph.add_conditional_edges("drift_sentry", check_drift_condition, {"hitl_drift_approval": "hitl_drift_approval", "modality": "modality"})
     graph.add_edge("hitl_drift_approval", "modality")
     
@@ -1721,23 +2370,43 @@ def build_graph() -> StateGraph:
         {"execution_choice": "groq_loopfixer", "hitl_model_pause": "hitl_model_pause"}
     )
     
-    graph.add_edge("groq_loopfixer",     "execution_sandbox")
+    graph.add_edge("groq_loopfixer",     "codegen_contract_validator")
+    graph.add_conditional_edges(
+        "codegen_contract_validator",
+        check_codegen_validation_status,
+        {"debugger": "debugger", "continue": "execution_sandbox", "execution_failure": "execution_failure"}
+    )
     
-    graph.add_conditional_edges("execution_sandbox", check_execution_success, {"debugger": "debugger", "xai_node": "xai_node"})
-    graph.add_edge("debugger",           "execution_sandbox")
+    graph.add_conditional_edges(
+        "execution_sandbox",
+        check_execution_success,
+        {"debugger": "debugger", "execution_output_validator": "execution_output_validator"}
+    )
+    graph.add_conditional_edges(
+        "execution_output_validator",
+        check_execution_validation_status,
+        {"debugger": "debugger", "continue": "xai_node", "execution_failure": "execution_failure"}
+    )
+    graph.add_edge("debugger",           "codegen_contract_validator")
     graph.add_edge("xai_node",           "arxiv_comparator")
     graph.add_edge("arxiv_comparator",   "model_deployer")
     graph.add_edge("model_deployer",     "evaluator")
     
     # Tier 2 Closing Flow
-    graph.add_edge("evaluator",          "save_run_history")
+    graph.add_edge("evaluator",          "fairness_auditor")
+    graph.add_edge("fairness_auditor",   "evidence_collector")
+    graph.add_edge("evidence_collector", "compliance_mapper")
+    graph.add_edge("compliance_mapper",  "compliance_narrative")
+    graph.add_edge("compliance_narrative", "compliance_renderer")
+    graph.add_edge("compliance_renderer", "save_run_history")
     graph.add_edge("save_run_history",   "compare_runs")
     graph.add_edge("compare_runs",       END)
+    graph.add_edge("execution_failure",  END)
 
     from langgraph.checkpoint.memory import MemorySaver
     memory = MemorySaver()
 
     return graph.compile(
         checkpointer=memory,
-        interrupt_before=["hitl_model_pause", "hitl_pause", "hitl_drift_approval", "execution_choice"],
+        interrupt_before=UI_MANAGED_INTERRUPTS,
     )

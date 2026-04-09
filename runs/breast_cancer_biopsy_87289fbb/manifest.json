@@ -1,0 +1,27 @@
+{
+  "run_id": "breast_cancer_biopsy_87289fbb",
+  "user_query": "\"Diagnose breast cancer from biopsy records\"",
+  "problem_id": "breast_cancer_biopsy_87289fbb",
+  "status": "running",
+  "evidence_version": "1.0",
+  "created_at": "2026-04-09T06:59:03.453254",
+  "updated_at": "2026-04-09T06:59:46.535478",
+  "paths": {
+    "root": "C:\\Users\\mukhe\\Downloads\\OmniML\\runs\\breast_cancer_biopsy_87289fbb",
+    "artifacts": "C:\\Users\\mukhe\\Downloads\\OmniML\\runs\\breast_cancer_biopsy_87289fbb\\artifacts",
+    "plots": "C:\\Users\\mukhe\\Downloads\\OmniML\\runs\\breast_cancer_biopsy_87289fbb\\plots",
+    "reports": "C:\\Users\\mukhe\\Downloads\\OmniML\\runs\\breast_cancer_biopsy_87289fbb\\reports",
+    "exports": "C:\\Users\\mukhe\\Downloads\\OmniML\\runs\\breast_cancer_biopsy_87289fbb\\exports",
+    "logs": "C:\\Users\\mukhe\\Downloads\\OmniML\\runs\\breast_cancer_biopsy_87289fbb\\logs"
+  },
+  "artifact_refs": [
+    {
+      "name": "dataset_profile",
+      "kind": "dataset_profile",
+      "path": "C:\\Users\\mukhe\\Downloads\\OmniML\\runs\\breast_cancer_biopsy_87289fbb\\artifacts\\dataset_profile.json",
+      "created_at": "2026-04-09T06:59:46.535478",
+      "metadata": {}
+    }
+  ],
+  "metadata": {}
+}

@@ -1,0 +1,105 @@
+{
+  "source": "kaggle",
+  "dataset_ref": "utkarshx27/breast-cancer-wisconsin-diagnostic-dataset",
+  "csv_path": "C:\\Users\\mukhe\\Downloads\\OmniML\\data\\utkarshx27__breast-cancer-wisconsin-diagnostic-dataset\\brca.csv",
+  "row_count": 569,
+  "col_count": 32,
+  "columns": [
+    "Unnamed: 0",
+    "x.radius_mean",
+    "x.texture_mean",
+    "x.perimeter_mean",
+    "x.area_mean",
+    "x.smoothness_mean",
+    "x.compactness_mean",
+    "x.concavity_mean",
+    "x.concave_pts_mean",
+    "x.symmetry_mean",
+    "x.fractal_dim_mean",
+    "x.radius_se",
+    "x.texture_se",
+    "x.perimeter_se",
+    "x.area_se",
+    "x.smoothness_se",
+    "x.compactness_se",
+    "x.concavity_se",
+    "x.concave_pts_se",
+    "x.symmetry_se",
+    "x.fractal_dim_se",
+    "x.radius_worst",
+    "x.texture_worst",
+    "x.perimeter_worst",
+    "x.area_worst",
+    "x.smoothness_worst",
+    "x.compactness_worst",
+    "x.concavity_worst",
+    "x.concave_pts_worst",
+    "x.symmetry_worst",
+    "x.fractal_dim_worst",
+    "y"
+  ],
+  "target_column": null,
+  "modality": "tabular",
+  "provenance": {
+    "summary": "Selected dataset reference: utkarshx27/breast-cancer-wisconsin-diagnostic-dataset",
+    "download_status": "ok",
+    "download_error": ""
+  },
+  "lineage": {
+    "input_data_version": 1
+  },
+  "missing": {},
+  "top_correlations": [
+    {
+      "a": "x.radius_mean",
+      "b": "x.perimeter_mean",
+      "r": 1.0
+    },
+    {
+      "a": "x.radius_mean",
+      "b": "x.area_mean",
+      "r": 0.99
+    },
+    {
+      "a": "x.perimeter_mean",
+      "b": "x.area_mean",
+      "r": 0.99
+    },
+    {
+      "a": "x.radius_worst",
+      "b": "x.perimeter_worst",
+      "r": 0.99
+    },
+    {
+      "a": "x.radius_worst",
+      "b": "x.area_worst",
+      "r": 0.98
+    },
+    {
+      "a": "x.perimeter_worst",
+      "b": "x.area_worst",
+      "r": 0.98
+    },
+    {
+      "a": "x.radius_mean",
+      "b": "x.radius_worst",
+      "r": 0.97
+    },
+    {
+      "a": "x.radius_mean",
+      "b": "x.perimeter_worst",
+      "r": 0.97
+    },
+    {
+      "a": "x.perimeter_mean",
+      "b": "x.radius_worst",
+      "r": 0.97
+    },
+    {
+      "a": "x.perimeter_mean",
+      "b": "x.perimeter_worst",
+      "r": 0.97
+    }
+  ],
+  "detected_sensitive_features": []
+}

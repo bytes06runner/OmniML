@@ -1,0 +1,805 @@
+{
+  "run_manifest": {
+    "run_id": "breast_cancer_biopsy_a2ee7ec0",
+    "user_query": "\"Diagnose breast cancer from biopsy records\"",
+    "problem_id": "breast_cancer_biopsy_a2ee7ec0",
+    "status": "running",
+    "evidence_version": "1.0",
+    "created_at": "2026-04-09T10:20:08.310648",
+    "updated_at": "2026-04-09T10:20:50.661245",
+    "paths": {
+      "root": "C:\\Users\\mukhe\\Downloads\\OmniML\\runs\\breast_cancer_biopsy_a2ee7ec0",
+      "artifacts": "C:\\Users\\mukhe\\Downloads\\OmniML\\runs\\breast_cancer_biopsy_a2ee7ec0\\artifacts",
+      "plots": "C:\\Users\\mukhe\\Downloads\\OmniML\\runs\\breast_cancer_biopsy_a2ee7ec0\\plots",
+      "reports": "C:\\Users\\mukhe\\Downloads\\OmniML\\runs\\breast_cancer_biopsy_a2ee7ec0\\reports",
+      "exports": "C:\\Users\\mukhe\\Downloads\\OmniML\\runs\\breast_cancer_biopsy_a2ee7ec0\\exports",
+      "logs": "C:\\Users\\mukhe\\Downloads\\OmniML\\runs\\breast_cancer_biopsy_a2ee7ec0\\logs"
+    },
+    "artifact_refs": [
+      {
+        "name": "dataset_profile",
+        "kind": "dataset_profile",
+        "path": "C:\\Users\\mukhe\\Downloads\\OmniML\\runs\\breast_cancer_biopsy_a2ee7ec0\\artifacts\\dataset_profile.json",
+        "created_at": "2026-04-09T10:20:25.176738",
+        "metadata": {}
+      },
+      {
+        "name": "training_log",
+        "kind": "log",
+        "path": "C:\\Users\\mukhe\\Downloads\\OmniML\\runs\\breast_cancer_biopsy_a2ee7ec0\\logs\\training.log",
+        "created_at": "2026-04-09T10:20:42.586085",
+        "metadata": {}
+      },
+      {
+        "name": "xai_summary",
+        "kind": "xai",
+        "path": "C:\\Users\\mukhe\\Downloads\\OmniML\\runs\\breast_cancer_biopsy_a2ee7ec0\\artifacts\\xai_summary.json",
+        "created_at": "2026-04-09T10:20:42.601092",
+        "metadata": {}
+      },
+      {
+        "name": "benchmark_summary",
+        "kind": "benchmark",
+        "path": "C:\\Users\\mukhe\\Downloads\\OmniML\\runs\\breast_cancer_biopsy_a2ee7ec0\\artifacts\\benchmark_summary.json",
+        "created_at": "2026-04-09T10:20:43.884372",
+        "metadata": {}
+      },
+      {
+        "name": "final_report",
+        "kind": "report_markdown",
+        "path": "C:\\Users\\mukhe\\Downloads\\OmniML\\runs\\breast_cancer_biopsy_a2ee7ec0\\reports\\final_report.md",
+        "created_at": "2026-04-09T10:20:43.895370",
+        "metadata": {}
+      },
+      {
+        "name": "fairness_summary",
+        "kind": "fairness",
+        "path": "C:\\Users\\mukhe\\Downloads\\OmniML\\runs\\breast_cancer_biopsy_a2ee7ec0\\artifacts\\fairness_summary.json",
+        "created_at": "2026-04-09T10:20:43.909370",
+        "metadata": {}
+      },
+      {
+        "name": "eu_ai_act_markdown",
+        "kind": "report_markdown",
+        "path": "C:\\Users\\mukhe\\Downloads\\OmniML\\runs\\breast_cancer_biopsy_a2ee7ec0\\reports\\eu_ai_act.md",
+        "created_at": "2026-04-09T10:20:43.928368",
+        "metadata": {}
+      },
+      {
+        "name": "eu_ai_act_html",
+        "kind": "report_html",
+        "path": "C:\\Users\\mukhe\\Downloads\\OmniML\\runs\\breast_cancer_biopsy_a2ee7ec0\\reports\\eu_ai_act.html",
+        "created_at": "2026-04-09T10:20:43.929370",
+        "metadata": {}
+      },
+      {
+        "name": "eu_ai_act_pdf",
+        "kind": "report_pdf",
+        "path": "C:\\Users\\mukhe\\Downloads\\OmniML\\runs\\breast_cancer_biopsy_a2ee7ec0\\reports\\eu_ai_act.pdf",
+        "created_at": "2026-04-09T10:20:43.930368",
+        "metadata": {}
+      },
+      {
+        "name": "fda_samd_markdown",
+        "kind": "report_markdown",
+        "path": "C:\\Users\\mukhe\\Downloads\\OmniML\\runs\\breast_cancer_biopsy_a2ee7ec0\\reports\\fda_samd.md",
+        "created_at": "2026-04-09T10:20:43.934391",
+        "metadata": {}
+      },
+      {
+        "name": "fda_samd_html",
+        "kind": "report_html",
+        "path": "C:\\Users\\mukhe\\Downloads\\OmniML\\runs\\breast_cancer_biopsy_a2ee7ec0\\reports\\fda_samd.html",
+        "created_at": "2026-04-09T10:20:43.935370",
+        "metadata": {}
+      },
+      {
+        "name": "fda_samd_pdf",
+        "kind": "report_pdf",
+        "path": "C:\\Users\\mukhe\\Downloads\\OmniML\\runs\\breast_cancer_biopsy_a2ee7ec0\\reports\\fda_samd.pdf",
+        "created_at": "2026-04-09T10:20:43.936370",
+        "metadata": {}
+      },
+      {
+        "name": "soc2_markdown",
+        "kind": "report_markdown",
+        "path": "C:\\Users\\mukhe\\Downloads\\OmniML\\runs\\breast_cancer_biopsy_a2ee7ec0\\reports\\soc2.md",
+        "created_at": "2026-04-09T10:20:43.941374",
+        "metadata": {}
+      },
+      {
+        "name": "soc2_html",
+        "kind": "report_html",
+        "path": "C:\\Users\\mukhe\\Downloads\\OmniML\\runs\\breast_cancer_biopsy_a2ee7ec0\\reports\\soc2.html",
+        "created_at": "2026-04-09T10:20:43.942375",
+        "metadata": {}
+      },
+      {
+        "name": "soc2_pdf",
+        "kind": "report_pdf",
+        "path": "C:\\Users\\mukhe\\Downloads\\OmniML\\runs\\breast_cancer_biopsy_a2ee7ec0\\reports\\soc2.pdf",
+        "created_at": "2026-04-09T10:20:43.944375",
+        "metadata": {}
+      },
+      {
+        "name": "training_log",
+        "kind": "log",
+        "path": "C:\\Users\\mukhe\\Downloads\\OmniML\\runs\\breast_cancer_biopsy_a2ee7ec0\\logs\\training.log",
+        "created_at": "2026-04-09T10:20:49.781878",
+        "metadata": {}
+      },
+      {
+        "name": "xai_summary",
+        "kind": "xai",
+        "path": "C:\\Users\\mukhe\\Downloads\\OmniML\\runs\\breast_cancer_biopsy_a2ee7ec0\\artifacts\\xai_summary.json",
+        "created_at": "2026-04-09T10:20:49.796892",
+        "metadata": {}
+      },
+      {
+        "name": "benchmark_summary",
+        "kind": "benchmark",
+        "path": "C:\\Users\\mukhe\\Downloads\\OmniML\\runs\\breast_cancer_biopsy_a2ee7ec0\\artifacts\\benchmark_summary.json",
+        "created_at": "2026-04-09T10:20:50.559733",
+        "metadata": {}
+      },
+      {
+        "name": "final_report",
+        "kind": "report_markdown",
+        "path": "C:\\Users\\mukhe\\Downloads\\OmniML\\runs\\breast_cancer_biopsy_a2ee7ec0\\reports\\final_report.md",
+        "created_at": "2026-04-09T10:20:50.601265",
+        "metadata": {}
+      },
+      {
+        "name": "fairness_summary",
+        "kind": "fairness",
+        "path": "C:\\Users\\mukhe\\Downloads\\OmniML\\runs\\breast_cancer_biopsy_a2ee7ec0\\artifacts\\fairness_summary.json",
+        "created_at": "2026-04-09T10:20:50.624243",
+        "metadata": {}
+      },
+      {
+        "name": "eu_ai_act_markdown",
+        "kind": "report_markdown",
+        "path": "C:\\Users\\mukhe\\Downloads\\OmniML\\runs\\breast_cancer_biopsy_a2ee7ec0\\reports\\eu_ai_act.md",
+        "created_at": "2026-04-09T10:20:50.642255",
+        "metadata": {}
+      },
+      {
+        "name": "eu_ai_act_html",
+        "kind": "report_html",
+        "path": "C:\\Users\\mukhe\\Downloads\\OmniML\\runs\\breast_cancer_biopsy_a2ee7ec0\\reports\\eu_ai_act.html",
+        "created_at": "2026-04-09T10:20:50.643248",
+        "metadata": {}
+      },
+      {
+        "name": "eu_ai_act_pdf",
+        "kind": "report_pdf",
+        "path": "C:\\Users\\mukhe\\Downloads\\OmniML\\runs\\breast_cancer_biopsy_a2ee7ec0\\reports\\eu_ai_act.pdf",
+        "created_at": "2026-04-09T10:20:50.645254",
+        "metadata": {}
+      },
+      {
+        "name": "fda_samd_markdown",
+        "kind": "report_markdown",
+        "path": "C:\\Users\\mukhe\\Downloads\\OmniML\\runs\\breast_cancer_biopsy_a2ee7ec0\\reports\\fda_samd.md",
+        "created_at": "2026-04-09T10:20:50.650254",
+        "metadata": {}
+      },
+      {
+        "name": "fda_samd_html",
+        "kind": "report_html",
+        "path": "C:\\Users\\mukhe\\Downloads\\OmniML\\runs\\breast_cancer_biopsy_a2ee7ec0\\reports\\fda_samd.html",
+        "created_at": "2026-04-09T10:20:50.653248",
+        "metadata": {}
+      },
+      {
+        "name": "fda_samd_pdf",
+        "kind": "report_pdf",
+        "path": "C:\\Users\\mukhe\\Downloads\\OmniML\\runs\\breast_cancer_biopsy_a2ee7ec0\\reports\\fda_samd.pdf",
+        "created_at": "2026-04-09T10:20:50.654248",
+        "metadata": {}
+      },
+      {
+        "name": "soc2_markdown",
+        "kind": "report_markdown",
+        "path": "C:\\Users\\mukhe\\Downloads\\OmniML\\runs\\breast_cancer_biopsy_a2ee7ec0\\reports\\soc2.md",
+        "created_at": "2026-04-09T10:20:50.659247",
+        "metadata": {}
+      },
+      {
+        "name": "soc2_html",
+        "kind": "report_html",
+        "path": "C:\\Users\\mukhe\\Downloads\\OmniML\\runs\\breast_cancer_biopsy_a2ee7ec0\\reports\\soc2.html",
+        "created_at": "2026-04-09T10:20:50.660245",
+        "metadata": {}
+      },
+      {
+        "name": "soc2_pdf",
+        "kind": "report_pdf",
+        "path": "C:\\Users\\mukhe\\Downloads\\OmniML\\runs\\breast_cancer_biopsy_a2ee7ec0\\reports\\soc2.pdf",
+        "created_at": "2026-04-09T10:20:50.661245",
+        "metadata": {}
+      }
+    ],
+    "metadata": {}
+  },
+  "dataset_profile": {
+    "source": "kaggle",
+    "dataset_ref": "utkarshx27/breast-cancer-wisconsin-diagnostic-dataset",
+    "csv_path": "C:\\Users\\mukhe\\Downloads\\OmniML\\data\\utkarshx27__breast-cancer-wisconsin-diagnostic-dataset\\brca.csv",
+    "row_count": 569,
+    "col_count": 32,
+    "columns": [
+      "Unnamed: 0",
+      "x.radius_mean",
+      "x.texture_mean",
+      "x.perimeter_mean",
+      "x.area_mean",
+      "x.smoothness_mean",
+      "x.compactness_mean",
+      "x.concavity_mean",
+      "x.concave_pts_mean",
+      "x.symmetry_mean",
+      "x.fractal_dim_mean",
+      "x.radius_se",
+      "x.texture_se",
+      "x.perimeter_se",
+      "x.area_se",
+      "x.smoothness_se",
+      "x.compactness_se",
+      "x.concavity_se",
+      "x.concave_pts_se",
+      "x.symmetry_se",
+      "x.fractal_dim_se",
+      "x.radius_worst",
+      "x.texture_worst",
+      "x.perimeter_worst",
+      "x.area_worst",
+      "x.smoothness_worst",
+      "x.compactness_worst",
+      "x.concavity_worst",
+      "x.concave_pts_worst",
+      "x.symmetry_worst",
+      "x.fractal_dim_worst",
+      "y"
+    ],
+    "target_column": null,
+    "modality": "tabular",
+    "provenance": {
+      "summary": "Selected dataset reference: utkarshx27/breast-cancer-wisconsin-diagnostic-dataset",
+      "download_status": "ok",
+      "download_error": ""
+    },
+    "lineage": {
+      "input_data_version": 1
+    },
+    "missing": {},
+    "top_correlations": [
+      {
+        "a": "x.radius_mean",
+        "b": "x.perimeter_mean",
+        "r": 1.0
+      },
+      {
+        "a": "x.radius_mean",
+        "b": "x.area_mean",
+        "r": 0.99
+      },
+      {
+        "a": "x.perimeter_mean",
+        "b": "x.area_mean",
+        "r": 0.99
+      },
+      {
+        "a": "x.radius_worst",
+        "b": "x.perimeter_worst",
+        "r": 0.99
+      },
+      {
+        "a": "x.radius_worst",
+        "b": "x.area_worst",
+        "r": 0.98
+      },
+      {
+        "a": "x.perimeter_worst",
+        "b": "x.area_worst",
+        "r": 0.98
+      },
+      {
+        "a": "x.radius_mean",
+        "b": "x.radius_worst",
+        "r": 0.97
+      },
+      {
+        "a": "x.radius_mean",
+        "b": "x.perimeter_worst",
+        "r": 0.97
+      },
+      {
+        "a": "x.perimeter_mean",
+        "b": "x.radius_worst",
+        "r": 0.97
+      },
+      {
+        "a": "x.perimeter_mean",
+        "b": "x.perimeter_worst",
+        "r": 0.97
+      }
+    ],
+    "detected_sensitive_features": []
+  },
+  "training_artifacts": {
+    "task_type": "classification",
+    "metrics": {
+      "epoch": 5,
+      "loss": 0.016000000000000014,
+      "val_loss": 0.0,
+      "acc": 0.984,
+      "val_acc": 1.0
+    },
+    "best_params": {},
+    "training_config": {
+      "epochs": 5,
+      "test_size": 0.2,
+      "batch_size": 64,
+      "optimizer": "adam",
+      "lr": 0.001,
+      "early_stop": true,
+      "dropout": true,
+      "class_weights": true,
+      "shuffle": true,
+      "hpt_trials": 15,
+      "seed": 42,
+      "compliance_modes": [
+        "eu_ai_act",
+        "fda_samd",
+        "soc2"
+      ],
+      "fairness_config": {
+        "protected_attributes": [],
+        "disparity_threshold": 0.05,
+        "minimum_group_size": 25,
+        "backend": "fairlearn"
+      },
+      "benchmark_config": {
+        "mode": "prefer_live_then_cache",
+        "cache_ttl_days": 7,
+        "source_timeout_seconds": 10
+      },
+      "plugin_config": {
+        "enabled_plugins": [],
+        "plugin_overrides": {}
+      }
+    },
+    "training_logs_path": "C:\\Users\\mukhe\\Downloads\\OmniML\\runs\\breast_cancer_biopsy_a2ee7ec0\\logs\\training.log",
+    "predictions_path": "C:\\Users\\mukhe\\Downloads\\OmniML\\runs\\breast_cancer_biopsy_a2ee7ec0\\artifacts\\predictions.csv",
+    "evaluation_path": "C:\\Users\\mukhe\\Downloads\\OmniML\\runs\\breast_cancer_biopsy_a2ee7ec0\\artifacts\\evaluation.json",
+    "model_card": {
+      "target_column": "y",
+      "feature_names": [
+        "Unnamed: 0",
+        "x.radius_mean",
+        "x.texture_mean",
+        "x.perimeter_mean",
+        "x.area_mean",
+        "x.smoothness_mean",
+        "x.compactness_mean",
+        "x.concavity_mean",
+        "x.concave_pts_mean",
+        "x.symmetry_mean",
+        "x.fractal_dim_mean",
+        "x.radius_se",
+        "x.texture_se",
+        "x.perimeter_se",
+        "x.area_se",
+        "x.smoothness_se",
+        "x.compactness_se",
+        "x.concavity_se",
+        "x.concave_pts_se",
+        "x.symmetry_se",
+        "x.fractal_dim_se",
+        "x.radius_worst",
+        "x.texture_worst",
+        "x.perimeter_worst",
+        "x.area_worst",
+        "x.smoothness_worst",
+        "x.compactness_worst",
+        "x.concavity_worst",
+        "x.concave_pts_worst",
+        "x.symmetry_worst",
+        "x.fractal_dim_worst"
+      ],
+      "top_features": [
+        {
+          "feature": "Unnamed: 0",
+          "importance": 0.27020430191612055
+        },
+        {
+          "feature": "x.perimeter_worst",
+          "importance": 0.13924878168772148
+        },
+        {
+          "feature": "x.concave_pts_mean",
+          "importance": 0.09386071733040263
+        },
+        {
+          "feature": "x.radius_worst",
+          "importance": 0.08038467500517062
+        },
+        {
+          "feature": "x.area_worst",
+          "importance": 0.08016589859292002
+        },
+        {
+          "feature": "x.concave_pts_worst",
+          "importance": 0.06611800841290044
+        },
+        {
+          "feature": "x.area_mean",
+          "importance": 0.05359270958885479
+        },
+        {
+          "feature": "x.concavity_worst",
+          "importance": 0.03164493397646061
+        },
+        {
+          "feature": "x.concavity_mean",
+          "importance": 0.024025641651990986
+        },
+        {
+          "feature": "x.area_se",
+          "importance": 0.021700993093278467
+        }
+      ]
+    },
+    "export_paths": {
+      "model": "C:\\Users\\mukhe\\Downloads\\OmniML\\runs\\breast_cancer_biopsy_a2ee7ec0\\exports\\model.pt",
+      "scripted": "C:\\Users\\mukhe\\Downloads\\OmniML\\runs\\breast_cancer_biopsy_a2ee7ec0\\exports\\model_scripted.pt",
+      "onnx": "C:\\Users\\mukhe\\Downloads\\OmniML\\runs\\breast_cancer_biopsy_a2ee7ec0\\exports\\model.onnx",
+      "meta": "C:\\Users\\mukhe\\Downloads\\OmniML\\runs\\breast_cancer_biopsy_a2ee7ec0\\exports\\model_meta.json"
+    },
+    "plots": {
+      "loss_curve": "C:\\Users\\mukhe\\Downloads\\OmniML\\runs\\breast_cancer_biopsy_a2ee7ec0\\plots\\loss_curve.png",
+      "feature_correlation": "C:\\Users\\mukhe\\Downloads\\OmniML\\runs\\breast_cancer_biopsy_a2ee7ec0\\plots\\telemetry_distribution.png",
+      "shap_importance": "C:\\Users\\mukhe\\Downloads\\OmniML\\runs\\breast_cancer_biopsy_a2ee7ec0\\plots\\shap_importance.png"
+    }
+  },
+  "xai_artifacts": {
+    "status": "generated",
+    "explanation_method": "heuristic_feature_importance",
+    "narrative": "The model explanation is evidence-backed and should be interpreted as directional guidance rather than causal proof. Top features reflect the most influential available signals from the current training artifacts.",
+    "top_features": [
+      {
+        "feature": "Unnamed: 0",
+        "importance": 0.27020430191612055
+      },
+      {
+        "feature": "x.perimeter_worst",
+        "importance": 0.13924878168772148
+      },
+      {
+        "feature": "x.concave_pts_mean",
+        "importance": 0.09386071733040263
+      },
+      {
+        "feature": "x.radius_worst",
+        "importance": 0.08038467500517062
+      },
+      {
+        "feature": "x.area_worst",
+        "importance": 0.08016589859292002
+      },
+      {
+        "feature": "x.concave_pts_worst",
+        "importance": 0.06611800841290044
+      },
+      {
+        "feature": "x.area_mean",
+        "importance": 0.05359270958885479
+      },
+      {
+        "feature": "x.concavity_worst",
+        "importance": 0.03164493397646061
+      },
+      {
+        "feature": "x.concavity_mean",
+        "importance": 0.024025641651990986
+      },
+      {
+        "feature": "x.area_se",
+        "importance": 0.021700993093278467
+      }
+    ],
+    "limitations": [
+      "Feature importance is approximate when derived from generic training artifacts.",
+      "No counterfactual explanations are generated in this release."
+    ],
+    "evidence": {
+      "available_plots": [
+        "C:\\Users\\mukhe\\Downloads\\OmniML\\runs\\breast_cancer_biopsy_a2ee7ec0\\plots\\loss_curve.png",
+        "C:\\Users\\mukhe\\Downloads\\OmniML\\runs\\breast_cancer_biopsy_a2ee7ec0\\plots\\telemetry_distribution.png",
+        "C:\\Users\\mukhe\\Downloads\\OmniML\\runs\\breast_cancer_biopsy_a2ee7ec0\\plots\\shap_importance.png"
+      ]
+    }
+  },
+  "fairness_artifacts": {
+    "status": "not_applicable",
+    "config": {
+      "protected_attributes": [],
+      "primary_metric": "accuracy",
+      "disparity_threshold": 0.05,
+      "minimum_group_size": 25,
+      "backend": "fairlearn"
+    },
+    "detected_sensitive_features": [],
+    "confirmed_sensitive_features": [],
+    "excluded_sensitive_features": [],
+    "group_metrics": [],
+    "findings": [],
+    "narrative": "",
+    "summary_path": null,
+    "group_metrics_path": null,
+    "chart_paths": {}
+  },
+  "benchmark_artifacts": {
+    "query": {
+      "raw_prompt": "\"Diagnose breast cancer from biopsy records\"",
+      "task_label": "medical_diagnosis_classification",
+      "modality": "tabular",
+      "metric_name": "accuracy"
+    },
+    "leaderboard_entries": [],
+    "comparability": {
+      "score": 0.5,
+      "directly_comparable": false,
+      "notes": [
+        "Normalized benchmark task: medical_diagnosis_classification.",
+        "Benchmark sources are related but not strongly protocol-matched to the current run."
+      ],
+      "matched_dimensions": {
+        "task": true,
+        "metric": true,
+        "dataset": false,
+        "modality": true
+      }
+    },
+    "cited_papers": [],
+    "recommendations": [
+      {
+        "title": "Tighten comparability",
+        "category": "heuristic",
+        "recommendation": "Match the benchmark dataset split and evaluation metric exactly before treating a benchmark gap as actionably real.",
+        "source_refs": []
+      }
+    ],
+    "narrative": "",
+    "rendered_markdown": "## Benchmark Gap Analysis\n\n- Task label: `medical_diagnosis_classification`\n- Source status: `unavailable`\n- Cache hit: `False`\n- Retrieved at: `2026-04-09T10:20:49.891443+00:00`\n- Comparability score: `0.5`\n- Directly comparable: `False`\n\n### Sources\n- No leaderboard entries were available; related literature context only.\n\n### Retrieval Failures\n- Papers With Code retrieval failed: Expecting value: line 1 column 1 (char 0)\n\n### Recommendations\n- [heuristic] Match the benchmark dataset split and evaluation metric exactly before treating a benchmark gap as actionably real.",
+    "source_status": "unavailable",
+    "retrieval_failures": [
+      "Papers With Code retrieval failed: Expecting value: line 1 column 1 (char 0)"
+    ],
+    "cache_hit": false,
+    "retrieved_at": "2026-04-09T10:20:49.891443Z",
+    "staleness_days": null
+  },
+  "compliance_artifacts": [
+    {
+      "template_id": "eu_ai_act",
+      "title": "OmniML Compliance Report - EU AI ACT",
+      "validation": {
+        "completeness": "complete",
+        "missing_required": [],
+        "assumptions": [],
+        "warnings": []
+      },
+      "sections": [
+        {
+          "title": "Intended purpose narrative",
+          "key": "intended_purpose",
+          "body": "\"Diagnose breast cancer from biopsy records\"",
+          "evidence_keys": [
+            "intended_purpose"
+          ],
+          "missing_evidence": []
+        },
+        {
+          "title": "Dataset provenance",
+          "key": "dataset_provenance",
+          "body": "Selected dataset reference: utkarshx27/breast-cancer-wisconsin-diagnostic-dataset",
+          "evidence_keys": [
+            "dataset_provenance"
+          ],
+          "missing_evidence": []
+        },
+        {
+          "title": "Training metrics",
+          "key": "training_metrics",
+          "body": "{'epoch': 5, 'loss': 0.016000000000000014, 'val_loss': 0.0, 'acc': 0.984, 'val_acc': 1.0}",
+          "evidence_keys": [
+            "training_metrics"
+          ],
+          "missing_evidence": []
+        },
+        {
+          "title": "Transparency and explainability summary",
+          "key": "xai",
+          "body": "The model explanation is evidence-backed and should be interpreted as directional guidance rather than causal proof. Top features reflect the most influential available signals from the current training artifacts.",
+          "evidence_keys": [
+            "xai"
+          ],
+          "missing_evidence": []
+        },
+        {
+          "title": "Human oversight checkpoints",
+          "key": "human_oversight",
+          "body": "Dataset selection, architecture review, training config approval, and execution mode selection are explicit HITL checkpoints.",
+          "evidence_keys": [
+            "human_oversight"
+          ],
+          "missing_evidence": []
+        },
+        {
+          "title": "Evidence Traceability",
+          "key": "evidence_traceability",
+          "body": "- dataset_profile: C:\\Users\\mukhe\\Downloads\\OmniML\\runs\\breast_cancer_biopsy_a2ee7ec0\\artifacts\\dataset_profile.json\n- training_log: C:\\Users\\mukhe\\Downloads\\OmniML\\runs\\breast_cancer_biopsy_a2ee7ec0\\logs\\training.log\n- xai_summary: C:\\Users\\mukhe\\Downloads\\OmniML\\runs\\breast_cancer_biopsy_a2ee7ec0\\artifacts\\xai_summary.json\n- benchmark_summary: C:\\Users\\mukhe\\Downloads\\OmniML\\runs\\breast_cancer_biopsy_a2ee7ec0\\artifacts\\benchmark_summary.json\n- final_report: C:\\Users\\mukhe\\Downloads\\OmniML\\runs\\breast_cancer_biopsy_a2ee7ec0\\reports\\final_report.md\n- fairness_summary: C:\\Users\\mukhe\\Downloads\\OmniML\\runs\\breast_cancer_biopsy_a2ee7ec0\\artifacts\\fairness_summary.json\n- eu_ai_act_markdown: C:\\Users\\mukhe\\Downloads\\OmniML\\runs\\breast_cancer_biopsy_a2ee7ec0\\reports\\eu_ai_act.md\n- eu_ai_act_html: C:\\Users\\mukhe\\Downloads\\OmniML\\runs\\breast_cancer_biopsy_a2ee7ec0\\reports\\eu_ai_act.html\n- eu_ai_act_pdf: C:\\Users\\mukhe\\Downloads\\OmniML\\runs\\breast_cancer_biopsy_a2ee7ec0\\reports\\eu_ai_act.pdf\n- fda_samd_markdown: C:\\Users\\mukhe\\Downloads\\OmniML\\runs\\breast_cancer_biopsy_a2ee7ec0\\reports\\fda_samd.md\n- fda_samd_html: C:\\Users\\mukhe\\Downloads\\OmniML\\runs\\breast_cancer_biopsy_a2ee7ec0\\reports\\fda_samd.html\n- fda_samd_pdf: C:\\Users\\mukhe\\Downloads\\OmniML\\runs\\breast_cancer_biopsy_a2ee7ec0\\reports\\fda_samd.pdf\n- soc2_markdown: C:\\Users\\mukhe\\Downloads\\OmniML\\runs\\breast_cancer_biopsy_a2ee7ec0\\reports\\soc2.md\n- soc2_html: C:\\Users\\mukhe\\Downloads\\OmniML\\runs\\breast_cancer_biopsy_a2ee7ec0\\reports\\soc2.html\n- soc2_pdf: C:\\Users\\mukhe\\Downloads\\OmniML\\runs\\breast_cancer_biopsy_a2ee7ec0\\reports\\soc2.pdf\n- training_log: C:\\Users\\mukhe\\Downloads\\OmniML\\runs\\breast_cancer_biopsy_a2ee7ec0\\logs\\training.log\n- xai_summary: C:\\Users\\mukhe\\Downloads\\OmniML\\runs\\breast_cancer_biopsy_a2ee7ec0\\artifacts\\xai_summary.json\n- benchmark_summary: C:\\Users\\mukhe\\Downloads\\OmniML\\runs\\breast_cancer_biopsy_a2ee7ec0\\artifacts\\benchmark_summary.json\n- final_report: C:\\Users\\mukhe\\Downloads\\OmniML\\runs\\breast_cancer_biopsy_a2ee7ec0\\reports\\final_report.md\n- fairness_summary: C:\\Users\\mukhe\\Downloads\\OmniML\\runs\\breast_cancer_biopsy_a2ee7ec0\\artifacts\\fairness_summary.json",
+          "evidence_keys": [
+            "artifact_refs"
+          ],
+          "missing_evidence": []
+        }
+      ],
+      "markdown_path": "C:\\Users\\mukhe\\Downloads\\OmniML\\runs\\breast_cancer_biopsy_a2ee7ec0\\reports\\eu_ai_act.md",
+      "html_path": "C:\\Users\\mukhe\\Downloads\\OmniML\\runs\\breast_cancer_biopsy_a2ee7ec0\\reports\\eu_ai_act.html",
+      "pdf_path": "C:\\Users\\mukhe\\Downloads\\OmniML\\runs\\breast_cancer_biopsy_a2ee7ec0\\reports\\eu_ai_act.pdf"
+    },
+    {
+      "template_id": "fda_samd",
+      "title": "OmniML Compliance Report - FDA SAMD",
+      "validation": {
+        "completeness": "complete_with_assumptions",
+        "missing_required": [],
+        "assumptions": [
+          "Subgroup analysis when available was not available and is explicitly marked as omitted."
+        ],
+        "warnings": [
+          "fairness"
+        ]
+      },
+      "sections": [
+        {
+          "title": "Clinical intended use narrative",
+          "key": "clinical_intended_use",
+          "body": "\"Diagnose breast cancer from biopsy records\"",
+          "evidence_keys": [
+            "clinical_intended_use"
+          ],
+          "missing_evidence": []
+        },
+        {
+          "title": "Training and validation provenance",
+          "key": "dataset_provenance",
+          "body": "Selected dataset reference: utkarshx27/breast-cancer-wisconsin-diagnostic-dataset",
+          "evidence_keys": [
+            "dataset_provenance"
+          ],
+          "missing_evidence": []
+        },
+        {
+          "title": "Performance evidence",
+          "key": "performance",
+          "body": "{'epoch': 5, 'loss': 0.016000000000000014, 'val_loss': 0.0, 'acc': 0.984, 'val_acc': 1.0}",
+          "evidence_keys": [
+            "performance"
+          ],
+          "missing_evidence": []
+        },
+        {
+          "title": "Subgroup analysis when available",
+          "key": "fairness",
+          "body": "Evidence not available. This omission is explicitly disclosed.",
+          "evidence_keys": [
+            "fairness"
+          ],
+          "missing_evidence": [
+            "fairness"
+          ]
+        },
+        {
+          "title": "Version traceability",
+          "key": "change_management",
+          "body": "Run ID breast_cancer_biopsy_a2ee7ec0, problem ID breast_cancer_biopsy_a2ee7ec0, evidence version 1.0.",
+          "evidence_keys": [
+            "change_management"
+          ],
+          "missing_evidence": []
+        },
+        {
+          "title": "Evidence Traceability",
+          "key": "evidence_traceability",
+          "body": "- dataset_profile: C:\\Users\\mukhe\\Downloads\\OmniML\\runs\\breast_cancer_biopsy_a2ee7ec0\\artifacts\\dataset_profile.json\n- training_log: C:\\Users\\mukhe\\Downloads\\OmniML\\runs\\breast_cancer_biopsy_a2ee7ec0\\logs\\training.log\n- xai_summary: C:\\Users\\mukhe\\Downloads\\OmniML\\runs\\breast_cancer_biopsy_a2ee7ec0\\artifacts\\xai_summary.json\n- benchmark_summary: C:\\Users\\mukhe\\Downloads\\OmniML\\runs\\breast_cancer_biopsy_a2ee7ec0\\artifacts\\benchmark_summary.json\n- final_report: C:\\Users\\mukhe\\Downloads\\OmniML\\runs\\breast_cancer_biopsy_a2ee7ec0\\reports\\final_report.md\n- fairness_summary: C:\\Users\\mukhe\\Downloads\\OmniML\\runs\\breast_cancer_biopsy_a2ee7ec0\\artifacts\\fairness_summary.json\n- eu_ai_act_markdown: C:\\Users\\mukhe\\Downloads\\OmniML\\runs\\breast_cancer_biopsy_a2ee7ec0\\reports\\eu_ai_act.md\n- eu_ai_act_html: C:\\Users\\mukhe\\Downloads\\OmniML\\runs\\breast_cancer_biopsy_a2ee7ec0\\reports\\eu_ai_act.html\n- eu_ai_act_pdf: C:\\Users\\mukhe\\Downloads\\OmniML\\runs\\breast_cancer_biopsy_a2ee7ec0\\reports\\eu_ai_act.pdf\n- fda_samd_markdown: C:\\Users\\mukhe\\Downloads\\OmniML\\runs\\breast_cancer_biopsy_a2ee7ec0\\reports\\fda_samd.md\n- fda_samd_html: C:\\Users\\mukhe\\Downloads\\OmniML\\runs\\breast_cancer_biopsy_a2ee7ec0\\reports\\fda_samd.html\n- fda_samd_pdf: C:\\Users\\mukhe\\Downloads\\OmniML\\runs\\breast_cancer_biopsy_a2ee7ec0\\reports\\fda_samd.pdf\n- soc2_markdown: C:\\Users\\mukhe\\Downloads\\OmniML\\runs\\breast_cancer_biopsy_a2ee7ec0\\reports\\soc2.md\n- soc2_html: C:\\Users\\mukhe\\Downloads\\OmniML\\runs\\breast_cancer_biopsy_a2ee7ec0\\reports\\soc2.html\n- soc2_pdf: C:\\Users\\mukhe\\Downloads\\OmniML\\runs\\breast_cancer_biopsy_a2ee7ec0\\reports\\soc2.pdf\n- training_log: C:\\Users\\mukhe\\Downloads\\OmniML\\runs\\breast_cancer_biopsy_a2ee7ec0\\logs\\training.log\n- xai_summary: C:\\Users\\mukhe\\Downloads\\OmniML\\runs\\breast_cancer_biopsy_a2ee7ec0\\artifacts\\xai_summary.json\n- benchmark_summary: C:\\Users\\mukhe\\Downloads\\OmniML\\runs\\breast_cancer_biopsy_a2ee7ec0\\artifacts\\benchmark_summary.json\n- final_report: C:\\Users\\mukhe\\Downloads\\OmniML\\runs\\breast_cancer_biopsy_a2ee7ec0\\reports\\final_report.md\n- fairness_summary: C:\\Users\\mukhe\\Downloads\\OmniML\\runs\\breast_cancer_biopsy_a2ee7ec0\\artifacts\\fairness_summary.json\n- eu_ai_act_markdown: C:\\Users\\mukhe\\Downloads\\OmniML\\runs\\breast_cancer_biopsy_a2ee7ec0\\reports\\eu_ai_act.md\n- eu_ai_act_html: C:\\Users\\mukhe\\Downloads\\OmniML\\runs\\breast_cancer_biopsy_a2ee7ec0\\reports\\eu_ai_act.html\n- eu_ai_act_pdf: C:\\Users\\mukhe\\Downloads\\OmniML\\runs\\breast_cancer_biopsy_a2ee7ec0\\reports\\eu_ai_act.pdf",
+          "evidence_keys": [
+            "artifact_refs"
+          ],
+          "missing_evidence": []
+        }
+      ],
+      "markdown_path": "C:\\Users\\mukhe\\Downloads\\OmniML\\runs\\breast_cancer_biopsy_a2ee7ec0\\reports\\fda_samd.md",
+      "html_path": "C:\\Users\\mukhe\\Downloads\\OmniML\\runs\\breast_cancer_biopsy_a2ee7ec0\\reports\\fda_samd.html",
+      "pdf_path": "C:\\Users\\mukhe\\Downloads\\OmniML\\runs\\breast_cancer_biopsy_a2ee7ec0\\reports\\fda_samd.pdf"
+    },
+    {
+      "template_id": "soc2",
+      "title": "OmniML Compliance Report - SOC2",
+      "validation": {
+        "completeness": "complete",
+        "missing_required": [],
+        "assumptions": [],
+        "warnings": []
+      },
+      "sections": [
+        {
+          "title": "System description",
+          "key": "system_description",
+          "body": "OmniML is a LangGraph-orchestrated ML system that sources data, trains a model, evaluates it, and renders evidence-backed reports.",
+          "evidence_keys": [
+            "system_description"
+          ],
+          "missing_evidence": []
+        },
+        {
+          "title": "Change management evidence",
+          "key": "change_management",
+          "body": "Run ID breast_cancer_biopsy_a2ee7ec0, problem ID breast_cancer_biopsy_a2ee7ec0, evidence version 1.0.",
+          "evidence_keys": [
+            "change_management"
+          ],
+          "missing_evidence": []
+        },
+        {
+          "title": "Data lineage",
+          "key": "data_lineage",
+          "body": "C:\\Users\\mukhe\\Downloads\\OmniML\\data\\utkarshx27__breast-cancer-wisconsin-diagnostic-dataset\\brca.csv",
+          "evidence_keys": [
+            "data_lineage"
+          ],
+          "missing_evidence": []
+        },
+        {
+          "title": "Monitoring and logging",
+          "key": "monitoring",
+          "body": "C:\\Users\\mukhe\\Downloads\\OmniML\\runs\\breast_cancer_biopsy_a2ee7ec0\\logs\\training.log",
+          "evidence_keys": [
+            "monitoring"
+          ],
+          "missing_evidence": []
+        },
+        {
+          "title": "Model risk controls",
+          "key": "model_risk",
+          "body": "Known limitations and failure modes are captured in the compliance report and XAI/fairness appendices.",
+          "evidence_keys": [
+            "model_risk"
+          ],
+          "missing_evidence": []
+        },
+        {
+          "title": "Evidence Traceability",
+          "key": "evidence_traceability",
+          "body": "- dataset_profile: C:\\Users\\mukhe\\Downloads\\OmniML\\runs\\breast_cancer_biopsy_a2ee7ec0\\artifacts\\dataset_profile.json\n- training_log: C:\\Users\\mukhe\\Downloads\\OmniML\\runs\\breast_cancer_biopsy_a2ee7ec0\\logs\\training.log\n- xai_summary: C:\\Users\\mukhe\\Downloads\\OmniML\\runs\\breast_cancer_biopsy_a2ee7ec0\\artifacts\\xai_summary.json\n- benchmark_summary: C:\\Users\\mukhe\\Downloads\\OmniML\\runs\\breast_cancer_biopsy_a2ee7ec0\\artifacts\\benchmark_summary.json\n- final_report: C:\\Users\\mukhe\\Downloads\\OmniML\\runs\\breast_cancer_biopsy_a2ee7ec0\\reports\\final_report.md\n- fairness_summary: C:\\Users\\mukhe\\Downloads\\OmniML\\runs\\breast_cancer_biopsy_a2ee7ec0\\artifacts\\fairness_summary.json\n- eu_ai_act_markdown: C:\\Users\\mukhe\\Downloads\\OmniML\\runs\\breast_cancer_biopsy_a2ee7ec0\\reports\\eu_ai_act.md\n- eu_ai_act_html: C:\\Users\\mukhe\\Downloads\\OmniML\\runs\\breast_cancer_biopsy_a2ee7ec0\\reports\\eu_ai_act.html\n- eu_ai_act_pdf: C:\\Users\\mukhe\\Downloads\\OmniML\\runs\\breast_cancer_biopsy_a2ee7ec0\\reports\\eu_ai_act.pdf\n- fda_samd_markdown: C:\\Users\\mukhe\\Downloads\\OmniML\\runs\\breast_cancer_biopsy_a2ee7ec0\\reports\\fda_samd.md\n- fda_samd_html: C:\\Users\\mukhe\\Downloads\\OmniML\\runs\\breast_cancer_biopsy_a2ee7ec0\\reports\\fda_samd.html\n- fda_samd_pdf: C:\\Users\\mukhe\\Downloads\\OmniML\\runs\\breast_cancer_biopsy_a2ee7ec0\\reports\\fda_samd.pdf\n- soc2_markdown: C:\\Users\\mukhe\\Downloads\\OmniML\\runs\\breast_cancer_biopsy_a2ee7ec0\\reports\\soc2.md\n- soc2_html: C:\\Users\\mukhe\\Downloads\\OmniML\\runs\\breast_cancer_biopsy_a2ee7ec0\\reports\\soc2.html\n- soc2_pdf: C:\\Users\\mukhe\\Downloads\\OmniML\\runs\\breast_cancer_biopsy_a2ee7ec0\\reports\\soc2.pdf\n- training_log: C:\\Users\\mukhe\\Downloads\\OmniML\\runs\\breast_cancer_biopsy_a2ee7ec0\\logs\\training.log\n- xai_summary: C:\\Users\\mukhe\\Downloads\\OmniML\\runs\\breast_cancer_biopsy_a2ee7ec0\\artifacts\\xai_summary.json\n- benchmark_summary: C:\\Users\\mukhe\\Downloads\\OmniML\\runs\\breast_cancer_biopsy_a2ee7ec0\\artifacts\\benchmark_summary.json\n- final_report: C:\\Users\\mukhe\\Downloads\\OmniML\\runs\\breast_cancer_biopsy_a2ee7ec0\\reports\\final_report.md\n- fairness_summary: C:\\Users\\mukhe\\Downloads\\OmniML\\runs\\breast_cancer_biopsy_a2ee7ec0\\artifacts\\fairness_summary.json\n- eu_ai_act_markdown: C:\\Users\\mukhe\\Downloads\\OmniML\\runs\\breast_cancer_biopsy_a2ee7ec0\\reports\\eu_ai_act.md\n- eu_ai_act_html: C:\\Users\\mukhe\\Downloads\\OmniML\\runs\\breast_cancer_biopsy_a2ee7ec0\\reports\\eu_ai_act.html\n- eu_ai_act_pdf: C:\\Users\\mukhe\\Downloads\\OmniML\\runs\\breast_cancer_biopsy_a2ee7ec0\\reports\\eu_ai_act.pdf\n- fda_samd_markdown: C:\\Users\\mukhe\\Downloads\\OmniML\\runs\\breast_cancer_biopsy_a2ee7ec0\\reports\\fda_samd.md\n- fda_samd_html: C:\\Users\\mukhe\\Downloads\\OmniML\\runs\\breast_cancer_biopsy_a2ee7ec0\\reports\\fda_samd.html\n- fda_samd_pdf: C:\\Users\\mukhe\\Downloads\\OmniML\\runs\\breast_cancer_biopsy_a2ee7ec0\\reports\\fda_samd.pdf",
+          "evidence_keys": [
+            "artifact_refs"
+          ],
+          "missing_evidence": []
+        }
+      ],
+      "markdown_path": "C:\\Users\\mukhe\\Downloads\\OmniML\\runs\\breast_cancer_biopsy_a2ee7ec0\\reports\\soc2.md",
+      "html_path": "C:\\Users\\mukhe\\Downloads\\OmniML\\runs\\breast_cancer_biopsy_a2ee7ec0\\reports\\soc2.html",
+      "pdf_path": "C:\\Users\\mukhe\\Downloads\\OmniML\\runs\\breast_cancer_biopsy_a2ee7ec0\\reports\\soc2.pdf"
+    }
+  ],
+  "plugin_artifacts": {
+    "discovered": [],
+    "executions": [],
+    "enabled_plugins": [],
+    "catalog": []
+  }
+}

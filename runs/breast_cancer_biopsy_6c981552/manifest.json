@@ -1,0 +1,55 @@
+{
+  "run_id": "breast_cancer_biopsy_6c981552",
+  "user_query": "\"Diagnose breast cancer from biopsy records\"",
+  "problem_id": "breast_cancer_biopsy_6c981552",
+  "status": "running",
+  "evidence_version": "1.0",
+  "created_at": "2026-04-09T08:32:03.584132",
+  "updated_at": "2026-04-09T08:33:08.089192",
+  "paths": {
+    "root": "C:\\Users\\mukhe\\Downloads\\OmniML\\runs\\breast_cancer_biopsy_6c981552",
+    "artifacts": "C:\\Users\\mukhe\\Downloads\\OmniML\\runs\\breast_cancer_biopsy_6c981552\\artifacts",
+    "plots": "C:\\Users\\mukhe\\Downloads\\OmniML\\runs\\breast_cancer_biopsy_6c981552\\plots",
+    "reports": "C:\\Users\\mukhe\\Downloads\\OmniML\\runs\\breast_cancer_biopsy_6c981552\\reports",
+    "exports": "C:\\Users\\mukhe\\Downloads\\OmniML\\runs\\breast_cancer_biopsy_6c981552\\exports",
+    "logs": "C:\\Users\\mukhe\\Downloads\\OmniML\\runs\\breast_cancer_biopsy_6c981552\\logs"
+  },
+  "artifact_refs": [
+    {
+      "name": "dataset_profile",
+      "kind": "dataset_profile",
+      "path": "C:\\Users\\mukhe\\Downloads\\OmniML\\runs\\breast_cancer_biopsy_6c981552\\artifacts\\dataset_profile.json",
+      "created_at": "2026-04-09T08:32:27.235174",
+      "metadata": {}
+    },
+    {
+      "name": "training_log",
+      "kind": "log",
+      "path": "C:\\Users\\mukhe\\Downloads\\OmniML\\runs\\breast_cancer_biopsy_6c981552\\logs\\training.log",
+      "created_at": "2026-04-09T08:32:56.018548",
+      "metadata": {}
+    },
+    {
+      "name": "training_log",
+      "kind": "log",
+      "path": "C:\\Users\\mukhe\\Downloads\\OmniML\\runs\\breast_cancer_biopsy_6c981552\\logs\\training.log",
+      "created_at": "2026-04-09T08:32:59.501205",
+      "metadata": {}
+    },
+    {
+      "name": "training_log",
+      "kind": "log",
+      "path": "C:\\Users\\mukhe\\Downloads\\OmniML\\runs\\breast_cancer_biopsy_6c981552\\logs\\training.log",
+      "created_at": "2026-04-09T08:33:03.080194",
+      "metadata": {}
+    },
+    {
+      "name": "training_log",
+      "kind": "log",
+      "path": "C:\\Users\\mukhe\\Downloads\\OmniML\\runs\\breast_cancer_biopsy_6c981552\\logs\\training.log",
+      "created_at": "2026-04-09T08:33:08.089192",
+      "metadata": {}
+    }
+  ],
+  "metadata": {}
+}

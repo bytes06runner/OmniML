@@ -1,0 +1,17 @@
+{
+  "status": "limited",
+  "explanation_method": "heuristic_feature_importance",
+  "narrative": "The model explanation is evidence-backed and should be interpreted as directional guidance rather than causal proof. Top features reflect the most influential available signals from the current training artifacts.",
+  "top_features": [],
+  "limitations": [
+    "Feature importance is approximate when derived from generic training artifacts.",
+    "No counterfactual explanations are generated in this release."
+  ],
+  "evidence": {
+    "available_plots": [
+      "C:\\Users\\mukhe\\Downloads\\OmniML\\runs\\breast_cancer_biopsy_c7a41ad1\\plots\\loss_curve.png",
+      "C:\\Users\\mukhe\\Downloads\\OmniML\\runs\\breast_cancer_biopsy_c7a41ad1\\plots\\telemetry_distribution.png",
+      "C:\\Users\\mukhe\\Downloads\\OmniML\\runs\\breast_cancer_biopsy_c7a41ad1\\plots\\shap_importance.png"
+    ]
+  }
+}

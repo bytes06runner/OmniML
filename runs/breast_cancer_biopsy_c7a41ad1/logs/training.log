@@ -1,0 +1,1 @@
+Traceback (most recent call last):\nFile "C:\Users\mukhe\AppData\Local\Temp\tmpgw_7ijpv.py", line 29, in <module>\ntarget_col = TRAINING_CONFIG.get("target_column") or df.columns[-1]\nAttributeError: 'str' object has no attribute 'get'

@@ -1,0 +1,150 @@
+{
+  "metrics": {
+    "task_type": "classification",
+    "accuracy": 1.0,
+    "f1": 1.0,
+    "val_acc": 1.0,
+    "best_kind": "rf"
+  },
+  "trial_results": [
+    {
+      "trial": 1,
+      "kind": "rf",
+      "params": {
+        "max_depth": 4,
+        "n_estimators": 80
+      },
+      "value": 1.0
+    },
+    {
+      "trial": 2,
+      "kind": "rf",
+      "params": {
+        "max_depth": 4,
+        "n_estimators": 150
+      },
+      "value": 1.0
+    },
+    {
+      "trial": 3,
+      "kind": "rf",
+      "params": {
+        "max_depth": 8,
+        "n_estimators": 80
+      },
+      "value": 1.0
+    },
+    {
+      "trial": 4,
+      "kind": "rf",
+      "params": {
+        "max_depth": 8,
+        "n_estimators": 150
+      },
+      "value": 1.0
+    },
+    {
+      "trial": 5,
+      "kind": "rf",
+      "params": {
+        "max_depth": null,
+        "n_estimators": 80
+      },
+      "value": 1.0
+    },
+    {
+      "trial": 6,
+      "kind": "rf",
+      "params": {
+        "max_depth": null,
+        "n_estimators": 150
+      },
+      "value": 1.0
+    },
+    {
+      "trial": 7,
+      "kind": "logreg",
+      "params": {
+        "C": 1.0
+      },
+      "value": 0.9824561403508771
+    }
+  ],
+  "target_column": "y",
+  "feature_columns": [
+    "Unnamed: 0",
+    "x.radius_mean",
+    "x.texture_mean",
+    "x.perimeter_mean",
+    "x.area_mean",
+    "x.smoothness_mean",
+    "x.compactness_mean",
+    "x.concavity_mean",
+    "x.concave_pts_mean",
+    "x.symmetry_mean",
+    "x.fractal_dim_mean",
+    "x.radius_se",
+    "x.texture_se",
+    "x.perimeter_se",
+    "x.area_se",
+    "x.smoothness_se",
+    "x.compactness_se",
+    "x.concavity_se",
+    "x.concave_pts_se",
+    "x.symmetry_se",
+    "x.fractal_dim_se",
+    "x.radius_worst",
+    "x.texture_worst",
+    "x.perimeter_worst",
+    "x.area_worst",
+    "x.smoothness_worst",
+    "x.compactness_worst",
+    "x.concavity_worst",
+    "x.concave_pts_worst",
+    "x.symmetry_worst",
+    "x.fractal_dim_worst"
+  ],
+  "feature_importance": [
+    {
+      "feature": "Unnamed: 0",
+      "importance": 0.27020430191612055
+    },
+    {
+      "feature": "x.perimeter_worst",
+      "importance": 0.13924878168772148
+    },
+    {
+      "feature": "x.concave_pts_mean",
+      "importance": 0.09386071733040263
+    },
+    {
+      "feature": "x.radius_worst",
+      "importance": 0.08038467500517062
+    },
+    {
+      "feature": "x.area_worst",
+      "importance": 0.08016589859292002
+    },
+    {
+      "feature": "x.concave_pts_worst",
+      "importance": 0.06611800841290044
+    },
+    {
+      "feature": "x.area_mean",
+      "importance": 0.05359270958885479
+    },
+    {
+      "feature": "x.concavity_worst",
+      "importance": 0.03164493397646061
+    },
+    {
+      "feature": "x.concavity_mean",
+      "importance": 0.024025641651990986
+    },
+    {
+      "feature": "x.area_se",
+      "importance": 0.021700993093278467
+    }
+  ],
+  "sensitive_candidates": []
+}

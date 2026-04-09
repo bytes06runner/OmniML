@@ -1,0 +1,19 @@
+{
+  "run_id": "breast_cancer_biopsy_fb1678a4",
+  "user_query": "Diagnose breast cancer from biopsy records",
+  "problem_id": "breast_cancer_biopsy_fb1678a4",
+  "status": "running",
+  "evidence_version": "1.0",
+  "created_at": "2026-04-08T15:43:57.324904",
+  "updated_at": "2026-04-08T15:43:57.324904",
+  "paths": {
+    "root": "C:\\Users\\mukhe\\Downloads\\OmniML\\runs\\breast_cancer_biopsy_fb1678a4",
+    "artifacts": "C:\\Users\\mukhe\\Downloads\\OmniML\\runs\\breast_cancer_biopsy_fb1678a4\\artifacts",
+    "plots": "C:\\Users\\mukhe\\Downloads\\OmniML\\runs\\breast_cancer_biopsy_fb1678a4\\plots",
+    "reports": "C:\\Users\\mukhe\\Downloads\\OmniML\\runs\\breast_cancer_biopsy_fb1678a4\\reports",
+    "exports": "C:\\Users\\mukhe\\Downloads\\OmniML\\runs\\breast_cancer_biopsy_fb1678a4\\exports",
+    "logs": "C:\\Users\\mukhe\\Downloads\\OmniML\\runs\\breast_cancer_biopsy_fb1678a4\\logs"
+  },
+  "artifact_refs": [],
+  "metadata": {}
+}

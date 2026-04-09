@@ -30,7 +30,8 @@ setup(
         "kaggle",
         "huggingface_hub",
         "datasets",
-        "requests"
+        "requests",
+        "pydantic>=2.0.0",
     ],
     python_requires=">=3.8",
 )

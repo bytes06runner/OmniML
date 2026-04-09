@@ -1,0 +1,447 @@
+{
+  "run_id": "breast_cancer_biopsy_e347cf0a",
+  "user_query": "\"Diagnose breast cancer from biopsy records\"",
+  "problem_id": "breast_cancer_biopsy_e347cf0a",
+  "status": "running",
+  "evidence_version": "1.0",
+  "created_at": "2026-04-09T07:52:50.523043",
+  "updated_at": "2026-04-09T08:03:19.847918",
+  "paths": {
+    "root": "C:\\Users\\mukhe\\Downloads\\OmniML\\runs\\breast_cancer_biopsy_e347cf0a",
+    "artifacts": "C:\\Users\\mukhe\\Downloads\\OmniML\\runs\\breast_cancer_biopsy_e347cf0a\\artifacts",
+    "plots": "C:\\Users\\mukhe\\Downloads\\OmniML\\runs\\breast_cancer_biopsy_e347cf0a\\plots",
+    "reports": "C:\\Users\\mukhe\\Downloads\\OmniML\\runs\\breast_cancer_biopsy_e347cf0a\\reports",
+    "exports": "C:\\Users\\mukhe\\Downloads\\OmniML\\runs\\breast_cancer_biopsy_e347cf0a\\exports",
+    "logs": "C:\\Users\\mukhe\\Downloads\\OmniML\\runs\\breast_cancer_biopsy_e347cf0a\\logs"
+  },
+  "artifact_refs": [
+    {
+      "name": "dataset_profile",
+      "kind": "dataset_profile",
+      "path": "C:\\Users\\mukhe\\Downloads\\OmniML\\runs\\breast_cancer_biopsy_e347cf0a\\artifacts\\dataset_profile.json",
+      "created_at": "2026-04-09T07:53:31.377681",
+      "metadata": {}
+    },
+    {
+      "name": "training_log",
+      "kind": "log",
+      "path": "C:\\Users\\mukhe\\Downloads\\OmniML\\runs\\breast_cancer_biopsy_e347cf0a\\logs\\training.log",
+      "created_at": "2026-04-09T07:53:56.685908",
+      "metadata": {}
+    },
+    {
+      "name": "training_log",
+      "kind": "log",
+      "path": "C:\\Users\\mukhe\\Downloads\\OmniML\\runs\\breast_cancer_biopsy_e347cf0a\\logs\\training.log",
+      "created_at": "2026-04-09T07:54:13.642197",
+      "metadata": {}
+    },
+    {
+      "name": "training_log",
+      "kind": "log",
+      "path": "C:\\Users\\mukhe\\Downloads\\OmniML\\runs\\breast_cancer_biopsy_e347cf0a\\logs\\training.log",
+      "created_at": "2026-04-09T07:54:29.940604",
+      "metadata": {}
+    },
+    {
+      "name": "training_log",
+      "kind": "log",
+      "path": "C:\\Users\\mukhe\\Downloads\\OmniML\\runs\\breast_cancer_biopsy_e347cf0a\\logs\\training.log",
+      "created_at": "2026-04-09T07:54:39.797259",
+      "metadata": {}
+    },
+    {
+      "name": "training_log",
+      "kind": "log",
+      "path": "C:\\Users\\mukhe\\Downloads\\OmniML\\runs\\breast_cancer_biopsy_e347cf0a\\logs\\training.log",
+      "created_at": "2026-04-09T07:54:56.621472",
+      "metadata": {}
+    },
+    {
+      "name": "training_log",
+      "kind": "log",
+      "path": "C:\\Users\\mukhe\\Downloads\\OmniML\\runs\\breast_cancer_biopsy_e347cf0a\\logs\\training.log",
+      "created_at": "2026-04-09T07:55:06.352964",
+      "metadata": {}
+    },
+    {
+      "name": "training_log",
+      "kind": "log",
+      "path": "C:\\Users\\mukhe\\Downloads\\OmniML\\runs\\breast_cancer_biopsy_e347cf0a\\logs\\training.log",
+      "created_at": "2026-04-09T07:55:14.533079",
+      "metadata": {}
+    },
+    {
+      "name": "training_log",
+      "kind": "log",
+      "path": "C:\\Users\\mukhe\\Downloads\\OmniML\\runs\\breast_cancer_biopsy_e347cf0a\\logs\\training.log",
+      "created_at": "2026-04-09T07:55:22.925119",
+      "metadata": {}
+    },
+    {
+      "name": "training_log",
+      "kind": "log",
+      "path": "C:\\Users\\mukhe\\Downloads\\OmniML\\runs\\breast_cancer_biopsy_e347cf0a\\logs\\training.log",
+      "created_at": "2026-04-09T07:55:31.778967",
+      "metadata": {}
+    },
+    {
+      "name": "training_log",
+      "kind": "log",
+      "path": "C:\\Users\\mukhe\\Downloads\\OmniML\\runs\\breast_cancer_biopsy_e347cf0a\\logs\\training.log",
+      "created_at": "2026-04-09T07:55:40.441993",
+      "metadata": {}
+    },
+    {
+      "name": "training_log",
+      "kind": "log",
+      "path": "C:\\Users\\mukhe\\Downloads\\OmniML\\runs\\breast_cancer_biopsy_e347cf0a\\logs\\training.log",
+      "created_at": "2026-04-09T07:55:51.096437",
+      "metadata": {}
+    },
+    {
+      "name": "training_log",
+      "kind": "log",
+      "path": "C:\\Users\\mukhe\\Downloads\\OmniML\\runs\\breast_cancer_biopsy_e347cf0a\\logs\\training.log",
+      "created_at": "2026-04-09T07:56:00.455894",
+      "metadata": {}
+    },
+    {
+      "name": "training_log",
+      "kind": "log",
+      "path": "C:\\Users\\mukhe\\Downloads\\OmniML\\runs\\breast_cancer_biopsy_e347cf0a\\logs\\training.log",
+      "created_at": "2026-04-09T07:56:09.777343",
+      "metadata": {}
+    },
+    {
+      "name": "training_log",
+      "kind": "log",
+      "path": "C:\\Users\\mukhe\\Downloads\\OmniML\\runs\\breast_cancer_biopsy_e347cf0a\\logs\\training.log",
+      "created_at": "2026-04-09T07:56:18.488857",
+      "metadata": {}
+    },
+    {
+      "name": "training_log",
+      "kind": "log",
+      "path": "C:\\Users\\mukhe\\Downloads\\OmniML\\runs\\breast_cancer_biopsy_e347cf0a\\logs\\training.log",
+      "created_at": "2026-04-09T07:56:27.233960",
+      "metadata": {}
+    },
+    {
+      "name": "training_log",
+      "kind": "log",
+      "path": "C:\\Users\\mukhe\\Downloads\\OmniML\\runs\\breast_cancer_biopsy_e347cf0a\\logs\\training.log",
+      "created_at": "2026-04-09T07:56:35.982026",
+      "metadata": {}
+    },
+    {
+      "name": "training_log",
+      "kind": "log",
+      "path": "C:\\Users\\mukhe\\Downloads\\OmniML\\runs\\breast_cancer_biopsy_e347cf0a\\logs\\training.log",
+      "created_at": "2026-04-09T07:56:45.220226",
+      "metadata": {}
+    },
+    {
+      "name": "training_log",
+      "kind": "log",
+      "path": "C:\\Users\\mukhe\\Downloads\\OmniML\\runs\\breast_cancer_biopsy_e347cf0a\\logs\\training.log",
+      "created_at": "2026-04-09T07:57:01.825105",
+      "metadata": {}
+    },
+    {
+      "name": "training_log",
+      "kind": "log",
+      "path": "C:\\Users\\mukhe\\Downloads\\OmniML\\runs\\breast_cancer_biopsy_e347cf0a\\logs\\training.log",
+      "created_at": "2026-04-09T07:57:13.414687",
+      "metadata": {}
+    },
+    {
+      "name": "training_log",
+      "kind": "log",
+      "path": "C:\\Users\\mukhe\\Downloads\\OmniML\\runs\\breast_cancer_biopsy_e347cf0a\\logs\\training.log",
+      "created_at": "2026-04-09T07:57:26.555094",
+      "metadata": {}
+    },
+    {
+      "name": "training_log",
+      "kind": "log",
+      "path": "C:\\Users\\mukhe\\Downloads\\OmniML\\runs\\breast_cancer_biopsy_e347cf0a\\logs\\training.log",
+      "created_at": "2026-04-09T07:57:35.526016",
+      "metadata": {}
+    },
+    {
+      "name": "training_log",
+      "kind": "log",
+      "path": "C:\\Users\\mukhe\\Downloads\\OmniML\\runs\\breast_cancer_biopsy_e347cf0a\\logs\\training.log",
+      "created_at": "2026-04-09T07:57:43.936102",
+      "metadata": {}
+    },
+    {
+      "name": "training_log",
+      "kind": "log",
+      "path": "C:\\Users\\mukhe\\Downloads\\OmniML\\runs\\breast_cancer_biopsy_e347cf0a\\logs\\training.log",
+      "created_at": "2026-04-09T07:57:52.466969",
+      "metadata": {}
+    },
+    {
+      "name": "training_log",
+      "kind": "log",
+      "path": "C:\\Users\\mukhe\\Downloads\\OmniML\\runs\\breast_cancer_biopsy_e347cf0a\\logs\\training.log",
+      "created_at": "2026-04-09T07:58:01.284460",
+      "metadata": {}
+    },
+    {
+      "name": "training_log",
+      "kind": "log",
+      "path": "C:\\Users\\mukhe\\Downloads\\OmniML\\runs\\breast_cancer_biopsy_e347cf0a\\logs\\training.log",
+      "created_at": "2026-04-09T07:58:10.306136",
+      "metadata": {}
+    },
+    {
+      "name": "training_log",
+      "kind": "log",
+      "path": "C:\\Users\\mukhe\\Downloads\\OmniML\\runs\\breast_cancer_biopsy_e347cf0a\\logs\\training.log",
+      "created_at": "2026-04-09T07:58:18.448066",
+      "metadata": {}
+    },
+    {
+      "name": "training_log",
+      "kind": "log",
+      "path": "C:\\Users\\mukhe\\Downloads\\OmniML\\runs\\breast_cancer_biopsy_e347cf0a\\logs\\training.log",
+      "created_at": "2026-04-09T07:58:28.398967",
+      "metadata": {}
+    },
+    {
+      "name": "training_log",
+      "kind": "log",
+      "path": "C:\\Users\\mukhe\\Downloads\\OmniML\\runs\\breast_cancer_biopsy_e347cf0a\\logs\\training.log",
+      "created_at": "2026-04-09T07:58:38.137719",
+      "metadata": {}
+    },
+    {
+      "name": "training_log",
+      "kind": "log",
+      "path": "C:\\Users\\mukhe\\Downloads\\OmniML\\runs\\breast_cancer_biopsy_e347cf0a\\logs\\training.log",
+      "created_at": "2026-04-09T07:58:46.706380",
+      "metadata": {}
+    },
+    {
+      "name": "training_log",
+      "kind": "log",
+      "path": "C:\\Users\\mukhe\\Downloads\\OmniML\\runs\\breast_cancer_biopsy_e347cf0a\\logs\\training.log",
+      "created_at": "2026-04-09T07:58:55.211475",
+      "metadata": {}
+    },
+    {
+      "name": "training_log",
+      "kind": "log",
+      "path": "C:\\Users\\mukhe\\Downloads\\OmniML\\runs\\breast_cancer_biopsy_e347cf0a\\logs\\training.log",
+      "created_at": "2026-04-09T07:59:05.476688",
+      "metadata": {}
+    },
+    {
+      "name": "training_log",
+      "kind": "log",
+      "path": "C:\\Users\\mukhe\\Downloads\\OmniML\\runs\\breast_cancer_biopsy_e347cf0a\\logs\\training.log",
+      "created_at": "2026-04-09T07:59:14.062198",
+      "metadata": {}
+    },
+    {
+      "name": "training_log",
+      "kind": "log",
+      "path": "C:\\Users\\mukhe\\Downloads\\OmniML\\runs\\breast_cancer_biopsy_e347cf0a\\logs\\training.log",
+      "created_at": "2026-04-09T07:59:21.146317",
+      "metadata": {}
+    },
+    {
+      "name": "training_log",
+      "kind": "log",
+      "path": "C:\\Users\\mukhe\\Downloads\\OmniML\\runs\\breast_cancer_biopsy_e347cf0a\\logs\\training.log",
+      "created_at": "2026-04-09T07:59:30.616039",
+      "metadata": {}
+    },
+    {
+      "name": "training_log",
+      "kind": "log",
+      "path": "C:\\Users\\mukhe\\Downloads\\OmniML\\runs\\breast_cancer_biopsy_e347cf0a\\logs\\training.log",
+      "created_at": "2026-04-09T07:59:43.372936",
+      "metadata": {}
+    },
+    {
+      "name": "training_log",
+      "kind": "log",
+      "path": "C:\\Users\\mukhe\\Downloads\\OmniML\\runs\\breast_cancer_biopsy_e347cf0a\\logs\\training.log",
+      "created_at": "2026-04-09T07:59:53.907352",
+      "metadata": {}
+    },
+    {
+      "name": "training_log",
+      "kind": "log",
+      "path": "C:\\Users\\mukhe\\Downloads\\OmniML\\runs\\breast_cancer_biopsy_e347cf0a\\logs\\training.log",
+      "created_at": "2026-04-09T08:00:01.003972",
+      "metadata": {}
+    },
+    {
+      "name": "training_log",
+      "kind": "log",
+      "path": "C:\\Users\\mukhe\\Downloads\\OmniML\\runs\\breast_cancer_biopsy_e347cf0a\\logs\\training.log",
+      "created_at": "2026-04-09T08:00:08.540973",
+      "metadata": {}
+    },
+    {
+      "name": "training_log",
+      "kind": "log",
+      "path": "C:\\Users\\mukhe\\Downloads\\OmniML\\runs\\breast_cancer_biopsy_e347cf0a\\logs\\training.log",
+      "created_at": "2026-04-09T08:00:16.971366",
+      "metadata": {}
+    },
+    {
+      "name": "training_log",
+      "kind": "log",
+      "path": "C:\\Users\\mukhe\\Downloads\\OmniML\\runs\\breast_cancer_biopsy_e347cf0a\\logs\\training.log",
+      "created_at": "2026-04-09T08:00:25.701476",
+      "metadata": {}
+    },
+    {
+      "name": "training_log",
+      "kind": "log",
+      "path": "C:\\Users\\mukhe\\Downloads\\OmniML\\runs\\breast_cancer_biopsy_e347cf0a\\logs\\training.log",
+      "created_at": "2026-04-09T08:00:33.695806",
+      "metadata": {}
+    },
+    {
+      "name": "training_log",
+      "kind": "log",
+      "path": "C:\\Users\\mukhe\\Downloads\\OmniML\\runs\\breast_cancer_biopsy_e347cf0a\\logs\\training.log",
+      "created_at": "2026-04-09T08:00:41.284696",
+      "metadata": {}
+    },
+    {
+      "name": "training_log",
+      "kind": "log",
+      "path": "C:\\Users\\mukhe\\Downloads\\OmniML\\runs\\breast_cancer_biopsy_e347cf0a\\logs\\training.log",
+      "created_at": "2026-04-09T08:00:51.294864",
+      "metadata": {}
+    },
+    {
+      "name": "training_log",
+      "kind": "log",
+      "path": "C:\\Users\\mukhe\\Downloads\\OmniML\\runs\\breast_cancer_biopsy_e347cf0a\\logs\\training.log",
+      "created_at": "2026-04-09T08:00:58.511295",
+      "metadata": {}
+    },
+    {
+      "name": "training_log",
+      "kind": "log",
+      "path": "C:\\Users\\mukhe\\Downloads\\OmniML\\runs\\breast_cancer_biopsy_e347cf0a\\logs\\training.log",
+      "created_at": "2026-04-09T08:01:05.679029",
+      "metadata": {}
+    },
+    {
+      "name": "training_log",
+      "kind": "log",
+      "path": "C:\\Users\\mukhe\\Downloads\\OmniML\\runs\\breast_cancer_biopsy_e347cf0a\\logs\\training.log",
+      "created_at": "2026-04-09T08:01:14.864559",
+      "metadata": {}
+    },
+    {
+      "name": "training_log",
+      "kind": "log",
+      "path": "C:\\Users\\mukhe\\Downloads\\OmniML\\runs\\breast_cancer_biopsy_e347cf0a\\logs\\training.log",
+      "created_at": "2026-04-09T08:01:27.781535",
+      "metadata": {}
+    },
+    {
+      "name": "training_log",
+      "kind": "log",
+      "path": "C:\\Users\\mukhe\\Downloads\\OmniML\\runs\\breast_cancer_biopsy_e347cf0a\\logs\\training.log",
+      "created_at": "2026-04-09T08:01:36.344995",
+      "metadata": {}
+    },
+    {
+      "name": "training_log",
+      "kind": "log",
+      "path": "C:\\Users\\mukhe\\Downloads\\OmniML\\runs\\breast_cancer_biopsy_e347cf0a\\logs\\training.log",
+      "created_at": "2026-04-09T08:01:44.114470",
+      "metadata": {}
+    },
+    {
+      "name": "training_log",
+      "kind": "log",
+      "path": "C:\\Users\\mukhe\\Downloads\\OmniML\\runs\\breast_cancer_biopsy_e347cf0a\\logs\\training.log",
+      "created_at": "2026-04-09T08:01:52.634576",
+      "metadata": {}
+    },
+    {
+      "name": "training_log",
+      "kind": "log",
+      "path": "C:\\Users\\mukhe\\Downloads\\OmniML\\runs\\breast_cancer_biopsy_e347cf0a\\logs\\training.log",
+      "created_at": "2026-04-09T08:01:59.922773",
+      "metadata": {}
+    },
+    {
+      "name": "training_log",
+      "kind": "log",
+      "path": "C:\\Users\\mukhe\\Downloads\\OmniML\\runs\\breast_cancer_biopsy_e347cf0a\\logs\\training.log",
+      "created_at": "2026-04-09T08:02:09.472353",
+      "metadata": {}
+    },
+    {
+      "name": "training_log",
+      "kind": "log",
+      "path": "C:\\Users\\mukhe\\Downloads\\OmniML\\runs\\breast_cancer_biopsy_e347cf0a\\logs\\training.log",
+      "created_at": "2026-04-09T08:02:17.144556",
+      "metadata": {}
+    },
+    {
+      "name": "training_log",
+      "kind": "log",
+      "path": "C:\\Users\\mukhe\\Downloads\\OmniML\\runs\\breast_cancer_biopsy_e347cf0a\\logs\\training.log",
+      "created_at": "2026-04-09T08:02:26.558476",
+      "metadata": {}
+    },
+    {
+      "name": "training_log",
+      "kind": "log",
+      "path": "C:\\Users\\mukhe\\Downloads\\OmniML\\runs\\breast_cancer_biopsy_e347cf0a\\logs\\training.log",
+      "created_at": "2026-04-09T08:02:33.855357",
+      "metadata": {}
+    },
+    {
+      "name": "training_log",
+      "kind": "log",
+      "path": "C:\\Users\\mukhe\\Downloads\\OmniML\\runs\\breast_cancer_biopsy_e347cf0a\\logs\\training.log",
+      "created_at": "2026-04-09T08:02:41.537301",
+      "metadata": {}
+    },
+    {
+      "name": "training_log",
+      "kind": "log",
+      "path": "C:\\Users\\mukhe\\Downloads\\OmniML\\runs\\breast_cancer_biopsy_e347cf0a\\logs\\training.log",
+      "created_at": "2026-04-09T08:02:49.601320",
+      "metadata": {}
+    },
+    {
+      "name": "training_log",
+      "kind": "log",
+      "path": "C:\\Users\\mukhe\\Downloads\\OmniML\\runs\\breast_cancer_biopsy_e347cf0a\\logs\\training.log",
+      "created_at": "2026-04-09T08:02:57.929387",
+      "metadata": {}
+    },
+    {
+      "name": "training_log",
+      "kind": "log",
+      "path": "C:\\Users\\mukhe\\Downloads\\OmniML\\runs\\breast_cancer_biopsy_e347cf0a\\logs\\training.log",
+      "created_at": "2026-04-09T08:03:08.831144",
+      "metadata": {}
+    },
+    {
+      "name": "training_log",
+      "kind": "log",
+      "path": "C:\\Users\\mukhe\\Downloads\\OmniML\\runs\\breast_cancer_biopsy_e347cf0a\\logs\\training.log",
+      "created_at": "2026-04-09T08:03:19.847918",
+      "metadata": {}
+    }
+  ],
+  "metadata": {}
+}

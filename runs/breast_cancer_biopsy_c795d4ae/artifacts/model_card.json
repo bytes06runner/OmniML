@@ -1,0 +1,85 @@
+{
+  "run_id": "breast_cancer_biopsy_c795d4ae",
+  "user_query": "\"Diagnose breast cancer from biopsy records\"",
+  "task_type": "classification",
+  "target_column": "y",
+  "feature_names": [
+    "Unnamed: 0",
+    "x.radius_mean",
+    "x.texture_mean",
+    "x.perimeter_mean",
+    "x.area_mean",
+    "x.smoothness_mean",
+    "x.compactness_mean",
+    "x.concavity_mean",
+    "x.concave_pts_mean",
+    "x.symmetry_mean",
+    "x.fractal_dim_mean",
+    "x.radius_se",
+    "x.texture_se",
+    "x.perimeter_se",
+    "x.area_se",
+    "x.smoothness_se",
+    "x.compactness_se",
+    "x.concavity_se",
+    "x.concave_pts_se",
+    "x.symmetry_se",
+    "x.fractal_dim_se",
+    "x.radius_worst",
+    "x.texture_worst",
+    "x.perimeter_worst",
+    "x.area_worst",
+    "x.smoothness_worst",
+    "x.compactness_worst",
+    "x.concavity_worst",
+    "x.concave_pts_worst",
+    "x.symmetry_worst",
+    "x.fractal_dim_worst"
+  ],
+  "top_features": [
+    {
+      "feature": "Unnamed: 0",
+      "importance": 0.27020430191612055
+    },
+    {
+      "feature": "x.perimeter_worst",
+      "importance": 0.13924878168772148
+    },
+    {
+      "feature": "x.concave_pts_mean",
+      "importance": 0.09386071733040263
+    },
+    {
+      "feature": "x.radius_worst",
+      "importance": 0.08038467500517062
+    },
+    {
+      "feature": "x.area_worst",
+      "importance": 0.08016589859292002
+    },
+    {
+      "feature": "x.concave_pts_worst",
+      "importance": 0.06611800841290044
+    },
+    {
+      "feature": "x.area_mean",
+      "importance": 0.05359270958885479
+    },
+    {
+      "feature": "x.concavity_worst",
+      "importance": 0.03164493397646061
+    },
+    {
+      "feature": "x.concavity_mean",
+      "importance": 0.024025641651990986
+    },
+    {
+      "feature": "x.area_se",
+      "importance": 0.021700993093278467
+    }
+  ],
+  "limitations": [
+    "Current release optimizes for structured tabular workloads.",
+    "Benchmark and fairness evidence depend on available labels and metadata."
+  ]
+}

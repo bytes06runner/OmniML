@@ -35,6 +35,35 @@ class DBStep(Base):
     end_time = Column(DateTime)
     input = Column(Text)
 
+
+class DBMLRun(Base):
+    __tablename__ = "ml_runs"
+    id = Column(String, primary_key=True)
+    problem_id = Column(String, index=True)
+    dataset_ref = Column(String)
+    data_version = Column(String)
+    dataset_csv_path = Column(String)
+    val_accuracy = Column(String)
+    report = Column(Text)
+    run_manifest = Column(JSON)
+    artifact_index = Column(JSON)
+    metrics = Column(JSON)
+    template_types = Column(JSON)
+    status = Column(String, default="completed")
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class DBBenchmarkCache(Base):
+    __tablename__ = "benchmark_cache"
+    id = Column(String, primary_key=True)
+    task_label = Column(String, index=True)
+    source_status = Column(String)
+    source_type = Column(String)
+    retrieved_at = Column(DateTime, default=datetime.utcnow)
+    payload = Column(JSON)
+    raw_excerpt = Column(Text)
+    failure_reason = Column(Text)
+
 class SQLiteDataLayer(BaseDataLayer):
     """
     Industrial-grade SQLite Data Layer for OmniML.
@@ -44,6 +73,111 @@ class SQLiteDataLayer(BaseDataLayer):
         self.engine = create_engine(db_path, connect_args={"check_same_thread": False})
         Base.metadata.create_all(self.engine)
         self.Session = sessionmaker(bind=self.engine)
+
+    def create_run_history(
+        self,
+        problem_id: str,
+        dataset_ref: str,
+        data_version: str,
+        dataset_csv_path: str,
+        metrics: Dict[str, Any],
+        val_accuracy: str,
+        report: str,
+        run_manifest: Dict[str, Any] | None = None,
+        artifact_index: Dict[str, Any] | None = None,
+        template_types: List[str] | None = None,
+        status: str = "completed",
+    ):
+        with self.Session() as s:
+            run = DBMLRun(
+                id=str(uuid.uuid4()),
+                problem_id=problem_id,
+                dataset_ref=dataset_ref,
+                data_version=data_version,
+                dataset_csv_path=dataset_csv_path,
+                metrics=metrics or {},
+                val_accuracy=val_accuracy,
+                report=report,
+                run_manifest=run_manifest or {},
+                artifact_index=artifact_index or {},
+                template_types=template_types or [],
+                status=status,
+            )
+            s.add(run)
+            s.commit()
+            return run.id
+
+    def get_run_histories_by_problem(self, problem_id: str) -> List[Dict[str, Any]]:
+        with self.Session() as s:
+            runs = (
+                s.query(DBMLRun)
+                .filter(DBMLRun.problem_id == problem_id)
+                .order_by(DBMLRun.created_at.desc())
+                .limit(20)
+                .all()
+            )
+            return [
+                {
+                    "id": run.id,
+                    "problem_id": run.problem_id,
+                    "dataset_ref": run.dataset_ref,
+                    "data_version": run.data_version,
+                    "dataset_csv_path": run.dataset_csv_path,
+                    "metrics": run.metrics or {},
+                    "val_accuracy": run.val_accuracy,
+                    "report": run.report,
+                    "run_manifest": run.run_manifest or {},
+                    "artifact_index": run.artifact_index or {},
+                    "template_types": run.template_types or [],
+                    "status": run.status,
+                    "created_at": run.created_at.isoformat() if run.created_at else None,
+                }
+                for run in runs
+            ]
+
+    def save_benchmark_cache(
+        self,
+        task_label: str,
+        source_status: str,
+        source_type: str,
+        payload: Dict[str, Any],
+        raw_excerpt: str = "",
+        failure_reason: str = "",
+    ) -> str:
+        with self.Session() as s:
+            row = DBBenchmarkCache(
+                id=str(uuid.uuid4()),
+                task_label=task_label,
+                source_status=source_status,
+                source_type=source_type,
+                payload=payload,
+                raw_excerpt=raw_excerpt,
+                failure_reason=failure_reason,
+            )
+            s.add(row)
+            s.commit()
+            return row.id
+
+    def get_latest_benchmark_cache(self, task_label: str) -> Optional[Dict[str, Any]]:
+        with self.Session() as s:
+            row = (
+                s.query(DBBenchmarkCache)
+                .filter(DBBenchmarkCache.task_label == task_label)
+                .order_by(DBBenchmarkCache.retrieved_at.desc())
+                .first()
+            )
+            if not row:
+                return None
+            return {
+                "id": row.id,
+                "task_label": row.task_label,
+                "source_status": row.source_status,
+                "source_type": row.source_type,
+                "retrieved_at": row.retrieved_at.isoformat() if row.retrieved_at else None,
+                "payload": row.payload or {},
+                "raw_excerpt": row.raw_excerpt or "",
+                "failure_reason": row.failure_reason or "",
+            }
 
     # User Management
     async def get_user(self, identifier: str):

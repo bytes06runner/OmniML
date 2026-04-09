@@ -13,6 +13,7 @@ import os
 import sys
 import re
 import json
+import builtins
 import zipfile
 import glob
 import shutil
@@ -22,7 +23,6 @@ from dotenv import load_dotenv
 from langchain_core.tools import tool
 
 # Resolve absolute path to 'kaggle' based on the active python interpreter
-KAGGLE_CLI_PATH = os.path.join(os.path.dirname(sys.executable), "kaggle")
 
 # ─────────────────────────────────────────────
 # Load env vars immediately so all tools see them
@@ -32,6 +32,92 @@ load_dotenv()
 KAGGLE_USERNAME = os.environ.get("KAGGLE_USERNAME", "")
 KAGGLE_KEY      = os.environ.get("KAGGLE_KEY", "")
 DATA_DIR        = Path("data")
+
+
+def _safe_print(message: str) -> None:
+    try:
+        builtins.print(message)
+    except UnicodeEncodeError:
+        builtins.print(message.encode("ascii", errors="ignore").decode("ascii"))
+
+
+print = _safe_print
+
+
+def _resolve_kaggle_cli_path() -> str:
+    resolved = shutil.which("kaggle")
+    if resolved:
+        return resolved
+
+    py_dir = Path(sys.executable).resolve().parent
+    if os.name == "nt":
+        candidates = [
+            py_dir / "Scripts" / "kaggle.exe",
+            py_dir / "kaggle.exe",
+        ]
+    else:
+        candidates = [py_dir / "kaggle"]
+
+    for candidate in candidates:
+        if candidate.exists():
+            return str(candidate)
+
+    return str(candidates[0])
+
+
+def _kaggle_env() -> dict:
+    return {**os.environ, "KAGGLE_USERNAME": KAGGLE_USERNAME, "KAGGLE_KEY": KAGGLE_KEY}
+
+
+def _classify_download_error(message: str, source: str = "kaggle") -> str:
+    text = (message or "").lower()
+    if any(token in text for token in ["proxyerror", "proxy", "connectionerror", "timed out", "timeout", "10061", "temporarily unavailable"]):
+        return "network_failed"
+    if any(token in text for token in ["401", "403", "unauthorized", "forbidden", "invalid api key", "credentials", "authenticate"]):
+        return "auth_failed"
+    if "no csv files found" in text or "unsupported format" in text:
+        return "unsupported_format"
+    if source == "huggingface" and any(token in text for token in ["builderconfig", "doesn't exist on the hub", "contains no splits"]):
+        return "unsupported_format"
+    return "download_failed"
+
+
+def _download_result(
+    *,
+    status: str,
+    source: str,
+    dataset_ref: str,
+    resolved_path: str = "",
+    detected_format: str = "",
+    error_message: str = "",
+) -> dict:
+    return {
+        "status": status,
+        "source": source,
+        "dataset_ref": dataset_ref,
+        "resolved_path": resolved_path,
+        "detected_format": detected_format,
+        "error_message": error_message,
+    }
+
+
+def _detect_tabular_format(path: Path) -> str:
+    suffix = path.suffix.lower()
+    if suffix in {".csv", ".tsv"}:
+        return suffix.lstrip(".")
+    return suffix.lstrip(".") or "unknown"
+
+
+def _kaggle_preflight() -> tuple[bool, str, str]:
+    kaggle_cli = _resolve_kaggle_cli_path()
+    if not Path(kaggle_cli).exists():
+        return False, kaggle_cli, f"Kaggle CLI not found at {kaggle_cli}"
+    if not KAGGLE_USERNAME or not KAGGLE_KEY:
+        return False, kaggle_cli, "KAGGLE_USERNAME or KAGGLE_KEY is not configured"
+    return True, kaggle_cli, ""
+
+
+KAGGLE_CLI_PATH = _resolve_kaggle_cli_path()
 
 
 # ─────────────────────────────────────────────
@@ -45,14 +131,17 @@ def kaggle_auth_setup() -> bool:
     Returns True on success, False on failure.
     """
     try:
+        if os.environ.get("OMNIML_SKIP_KAGGLE_AUTH") == "1" or "unittest" in sys.modules:
+            return False
+
         kaggle_dir  = Path.home() / ".kaggle"
         kaggle_json = kaggle_dir / "kaggle.json"
 
         if not KAGGLE_USERNAME or not KAGGLE_KEY:
-            print("[tools] WARNING: KAGGLE_USERNAME or KAGGLE_KEY not set in .env")
+            _safe_print("[tools] WARNING: KAGGLE_USERNAME or KAGGLE_KEY not set in .env")
             return False
 
-        kaggle_dir.mkdir(exist_ok=True)
+        kaggle_dir.mkdir(parents=True, exist_ok=True)
         kaggle_json.write_text(
             json.dumps({"username": KAGGLE_USERNAME, "key": KAGGLE_KEY}),
             encoding="utf-8",
@@ -141,7 +230,7 @@ def kaggle_search_tool(query: str) -> str:
 # 3.  Kaggle Dataset Downloader Tool
 # ─────────────────────────────────────────────
 @tool
-def kaggle_download_tool(dataset_ref: str) -> str:
+def _legacy_kaggle_download_tool_string(dataset_ref: str) -> dict:
     """
     Download a Kaggle dataset by its ref (e.g. 'owner/dataset-slug'),
     unzip it, and return the absolute path to the first CSV file found.
@@ -202,7 +291,7 @@ def kaggle_download_tool(dataset_ref: str) -> str:
 
     except Exception as exc:
         # ── Fallback: use the NASA C-MAPSS dataset already in workspace ─────
-        fallback_path = Path("train_FD001.txt")
+        fallback_path = Path("__disabled_fallback__")
         if fallback_path.exists():
             print(f"[tools] ⚠️  Kaggle download failed ({exc}). Using NASA C-MAPSS fallback.")
             return str(fallback_path.absolute())
@@ -212,6 +301,87 @@ def kaggle_download_tool(dataset_ref: str) -> str:
 # ─────────────────────────────────────────────
 # 4.  Kaggle Kernel Push Tool (CLOUD EXECUTION)
 # ─────────────────────────────────────────────
+@tool
+def kaggle_download_tool(dataset_ref: str) -> dict:
+    """
+    Download a Kaggle dataset by its ref and return a structured result.
+    """
+    ok, kaggle_cli, preflight_error = _kaggle_preflight()
+    if not ok:
+        return _download_result(
+            status=_classify_download_error(preflight_error),
+            source="kaggle",
+            dataset_ref=dataset_ref,
+            error_message=preflight_error,
+        )
+
+    try:
+        slug = dataset_ref.replace("/", "__")
+        dest_dir = DATA_DIR / slug
+        dest_dir.mkdir(parents=True, exist_ok=True)
+
+        print(f"[tools] Downloading dataset: {dataset_ref} -> {dest_dir}")
+        result = subprocess.run(
+            [
+                kaggle_cli, "datasets", "download",
+                "-d", dataset_ref,
+                "-p", str(dest_dir),
+                "--unzip",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=300,
+            env=_kaggle_env(),
+        )
+
+        if result.returncode != 0:
+            raise RuntimeError(result.stderr.strip() or result.stdout.strip() or "kaggle CLI returned non-zero exit code")
+
+        csv_files = sorted(glob.glob(str(dest_dir / "**" / "*.csv"), recursive=True))
+        if not csv_files:
+            zip_files = list(dest_dir.glob("*.zip"))
+            for zf in zip_files:
+                with zipfile.ZipFile(zf, "r") as archive:
+                    archive.extractall(dest_dir)
+            csv_files = sorted(glob.glob(str(dest_dir / "**" / "*.csv"), recursive=True))
+
+        if not csv_files:
+            return _download_result(
+                status="unsupported_format",
+                source="kaggle",
+                dataset_ref=dataset_ref,
+                error_message=f"Dataset {dataset_ref} downloaded but no CSV files were found in {dest_dir}",
+            )
+
+        csv_files.sort(key=lambda p: os.path.getsize(p), reverse=True)
+        chosen = Path(csv_files[0]).absolute()
+        size_mb = os.path.getsize(chosen) / (1024 * 1024)
+        print(f"[tools] CSV resolved: {chosen} ({size_mb:.1f} MB)")
+        return _download_result(
+            status="ok",
+            source="kaggle",
+            dataset_ref=dataset_ref,
+            resolved_path=str(chosen),
+            detected_format=_detect_tabular_format(chosen),
+        )
+
+    except subprocess.TimeoutExpired:
+        return _download_result(
+            status="network_failed",
+            source="kaggle",
+            dataset_ref=dataset_ref,
+            error_message=f"Download timed out for dataset {dataset_ref} (>5 min)",
+        )
+    except Exception as exc:
+        error_message = f"Download failed for {dataset_ref} - {type(exc).__name__}: {exc}"
+        return _download_result(
+            status=_classify_download_error(error_message),
+            source="kaggle",
+            dataset_ref=dataset_ref,
+            error_message=error_message,
+        )
+
+
 @tool
 def kaggle_push_tool(code: str, dataset_ref: str, title: str = "AnomaLLM v3 Auto-ML") -> str:
     """
@@ -415,7 +585,7 @@ def hf_search_tool(query: str) -> str:
 # 7.  HuggingFace Download Tool
 # ─────────────────────────────────────────────
 @tool
-def hf_download_tool(dataset_ref: str) -> str:
+def _legacy_hf_download_tool_string(dataset_ref: str) -> str:
     """
     Download a dataset from HuggingFace, save it as a CSV, and return the absolute path.
     """
@@ -461,6 +631,69 @@ def hf_download_tool(dataset_ref: str) -> str:
 # ─────────────────────────────────────────────
 # 8.  ArXiv Search Tool (Sprint 4)
 # ─────────────────────────────────────────────
+@tool
+def hf_download_tool(dataset_ref: str) -> dict:
+    """
+    Download a dataset from HuggingFace and return a structured result.
+    """
+    try:
+        from datasets import load_dataset
+        import pandas as pd
+
+        slug = dataset_ref.replace("/", "__")
+        dest_dir = DATA_DIR / slug
+        dest_dir.mkdir(parents=True, exist_ok=True)
+
+        csv_path = dest_dir / "data.csv"
+        if csv_path.exists():
+            return _download_result(
+                status="ok",
+                source="huggingface",
+                dataset_ref=dataset_ref,
+                resolved_path=str(csv_path.absolute()),
+                detected_format=_detect_tabular_format(csv_path),
+            )
+
+        print(f"[hf_download_tool] Downloading HF dataset: {dataset_ref}...")
+        try:
+            ds = load_dataset(dataset_ref, split="train")
+        except Exception as exc:
+            print(f"[hf_download_tool] Standard split failed: {exc}. Trying first available...")
+            ds = load_dataset(dataset_ref)
+            keys = list(ds.keys())
+            if not keys:
+                raise ValueError("Dataset contains no splits.")
+            ds = ds[keys[0]]
+
+        df = ds.to_pandas()
+        mem_usage = df.memory_usage(deep=True).sum()
+        if mem_usage > 500 * 1024 * 1024:
+            return _download_result(
+                status="unsupported_format",
+                source="huggingface",
+                dataset_ref=dataset_ref,
+                error_message=f"Dataset {dataset_ref} exceeds 500MB limit ({mem_usage / 1024 / 1024:.1f} MB).",
+            )
+
+        df.to_csv(csv_path, index=False)
+        print(f"[hf_download_tool] Saved CSV to {csv_path} ({mem_usage / 1024 / 1024:.1f} MB)")
+        return _download_result(
+            status="ok",
+            source="huggingface",
+            dataset_ref=dataset_ref,
+            resolved_path=str(csv_path.absolute()),
+            detected_format=_detect_tabular_format(csv_path),
+        )
+    except Exception as exc:
+        error_message = f"HuggingFace download failed for {dataset_ref} - {type(exc).__name__}: {exc}"
+        return _download_result(
+            status=_classify_download_error(error_message, source="huggingface"),
+            source="huggingface",
+            dataset_ref=dataset_ref,
+            error_message=error_message,
+        )
+
+
 @tool
 def arxiv_search_tool(query: str) -> str:
     """

@@ -259,6 +259,10 @@ Open [http://localhost:8001](http://localhost:8001) in your browser.
 
 > *"Classify customer churn from telecom subscription data."*
 
+## Plugin SDK
+
+OmniML supports trusted in-process enterprise plugins. See [docs/plugin_sdk.md](C:\Users\mukhe\Downloads\OmniML\docs\plugin_sdk.md) for the manifest format, supported slots, and a working example under `plugins/example_evidence/`.
+
 ---
 
 ## 📁 Project Structure

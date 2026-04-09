@@ -474,16 +474,19 @@ function connectSSE() {
 
 // ── Init ──────────────────────────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', () => {
-  try {
-    const de = window.parent.document.getElementById('eda-data-b64');
-    const ne = window.parent.document.getElementById('eda-narration-b64');
-    if (de && de.innerText.length > 4) {
-      raw = JSON.parse(atob(de.innerText));
-      // narration removed
-    }
-  } catch(e) {}
-  connectSSE();
-  if (raw) loadAll();
+  fetch(`/eda-data?session_id=${SESSION}`)
+    .then((res) => res.ok ? res.json() : null)
+    .then((data) => {
+      if (data && data.ok) {
+        raw = data.eda_data || null;
+      }
+      connectSSE();
+      if (raw) loadAll();
+    })
+    .catch(() => {
+      connectSSE();
+      if (raw) loadAll();
+    });
 });
 </script>
 </body>

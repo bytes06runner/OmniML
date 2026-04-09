@@ -1,0 +1,41 @@
+{
+  "query": {
+    "raw_prompt": "\"Diagnose breast cancer from biopsy records\"",
+    "task_label": "medical_diagnosis_classification",
+    "modality": "tabular",
+    "metric_name": "accuracy"
+  },
+  "leaderboard_entries": [],
+  "comparability": {
+    "score": 0.5,
+    "directly_comparable": false,
+    "notes": [
+      "Normalized benchmark task: medical_diagnosis_classification.",
+      "Benchmark sources are related but not strongly protocol-matched to the current run."
+    ],
+    "matched_dimensions": {
+      "task": true,
+      "metric": true,
+      "dataset": false,
+      "modality": true
+    }
+  },
+  "cited_papers": [],
+  "recommendations": [
+    {
+      "title": "Tighten comparability",
+      "category": "heuristic",
+      "recommendation": "Match the benchmark dataset split and evaluation metric exactly before treating a benchmark gap as actionably real.",
+      "source_refs": []
+    }
+  ],
+  "narrative": "",
+  "rendered_markdown": "## Benchmark Gap Analysis\n\n- Task label: `medical_diagnosis_classification`\n- Source status: `unavailable`\n- Cache hit: `False`\n- Retrieved at: `2026-04-09T10:20:49.891443+00:00`\n- Comparability score: `0.5`\n- Directly comparable: `False`\n\n### Sources\n- No leaderboard entries were available; related literature context only.\n\n### Retrieval Failures\n- Papers With Code retrieval failed: Expecting value: line 1 column 1 (char 0)\n\n### Recommendations\n- [heuristic] Match the benchmark dataset split and evaluation metric exactly before treating a benchmark gap as actionably real.",
+  "source_status": "unavailable",
+  "retrieval_failures": [
+    "Papers With Code retrieval failed: Expecting value: line 1 column 1 (char 0)"
+  ],
+  "cache_hit": false,
+  "retrieved_at": "2026-04-09T10:20:49.891443Z",
+  "staleness_days": null
+}

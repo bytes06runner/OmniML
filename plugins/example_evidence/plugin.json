@@ -1,0 +1,17 @@
+{
+  "name": "example_evidence",
+  "version": "0.1.0",
+  "module": "plugins.example_evidence.plugin",
+  "class_name": "ExampleEvidencePlugin",
+  "slot": "evidence_provider",
+  "description": "Adds a simple enterprise evidence block to demonstrate the Plugin SDK.",
+  "api_version": "1.0",
+  "task_types": ["classification", "regression"],
+  "compliance_impact": "Adds plugin-generated evidence to compliance bundles.",
+  "config_schema": {
+    "note": {
+      "type": "string",
+      "default": "Example plugin evidence injected."
+    }
+  }
+}
