@@ -52,13 +52,33 @@ def _bundle_evidence_map(bundle: EvidenceBundle) -> Dict[str, str]:
         for execution in bundle.plugin_artifacts.executions
         if execution.details.get("evidence_block")
     ]
+    xai_lines = [xai.narrative or ""]
+    if xai.plot_paths.get("shap_summary"):
+        xai_lines.append(f"SHAP summary plot: {xai.plot_paths['shap_summary']}")
+    if xai.local_lime:
+        xai_lines.append(f"LIME local explanations: {len(xai.local_lime)} instances.")
+    if xai.plot_paths.get("feature_importance"):
+        xai_lines.append(f"Model feature importance plot: {xai.plot_paths['feature_importance']}")
+    method = getattr(xai, "explanation_method", "") or ""
+    if "pytorch_limited" in method or method == "pytorch_limited":
+        xai_lines.append(
+            "PyTorch Path A run: UI SHAP/LIME not generated; use training curves, evaluation.json, and model_card."
+        )
+    if "text" in method:
+        xai_lines.append("Modality: text (TF-IDF / tabular feature explanations).")
+    elif "image" in method:
+        xai_lines.append("Modality: image (flattened-pixel sklearn explanations when available).")
+    for note in (xai.limitations or [])[:3]:
+        xai_lines.append(f"Limitation: {note}")
+    xai_body = "\n".join(line for line in xai_lines if line).strip() or str(xai.top_features)
+
     return {
         "intended_purpose": manifest.user_query,
         "clinical_intended_use": manifest.user_query,
         "dataset_provenance": dataset.provenance.get("summary") or dataset.dataset_ref or dataset.csv_path,
         "training_metrics": str(training.metrics),
         "performance": str(training.metrics),
-        "xai": xai.narrative or str(xai.top_features),
+        "xai": xai_body,
         "fairness": fairness.narrative,
         "human_oversight": "Dataset selection, architecture review, training config approval, and execution mode selection are explicit HITL checkpoints.",
         "change_management": f"Run ID {manifest.run_id}, problem ID {manifest.problem_id}, evidence version {manifest.evidence_version}.",
@@ -150,13 +170,15 @@ def render_markdown(report: ComplianceReport) -> str:
 
 
 def render_html(report: ComplianceReport, markdown: str) -> str:
+    from .evaluation_report import REPORT_HTML_STYLES
+
     escaped = markdown.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
     return (
-        "<html><head><meta charset='utf-8'><title>{}</title>"
-        "<style>body{{font-family:Arial,sans-serif;margin:40px;line-height:1.45}}"
-        "h1,h2{{color:#16324f}}</style></head>"
-        "<body><pre style='white-space:pre-wrap'>{}</pre></body></html>"
-    ).format(report.title, escaped)
+        "<html><head><meta charset='utf-8'><meta name='color-scheme' content='light only'>"
+        f"<title>{report.title}</title>"
+        f"<style>{REPORT_HTML_STYLES}</style></head>"
+        f"<body><pre>{escaped}</pre></body></html>"
+    )
 
 
 def render_pdf(report: ComplianceReport, markdown: str, target_path: str) -> str:

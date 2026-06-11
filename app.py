@@ -50,6 +50,7 @@ def set_stage(stage_id: str, status: str):
 
 def default_training_config() -> dict:
     return {
+        "training_path": "sklearn",
         "epochs": 50,
         "test_size": 0.2,
         "batch_size": 64,
@@ -659,12 +660,16 @@ def render_dataset_card(d: dict, source: str) -> str:
 
 async def send_dataset_selection_prompt(dataset_opts: list[dict], header: str | None = None):
     actions = []
-    desc_text = "These are real datasets that match the current tabular CSV workflow. Click one to download and proceed:\n\n"
+    desc_text = "Select a dataset (builtin cross-modal demos or Kaggle/HF). Click one to download and proceed:\n\n"
+    pending_local = cl.user_session.get("pending_local_dataset_ref")
+    if pending_local:
+        desc_text += f"- **Uploaded file** ready: `{pending_local}` (select if listed below or use a builtin).\n\n"
     for i, ds in enumerate(dataset_opts[:3]):
         source = ds.get("source", "kaggle").lower()
         card_md = render_dataset_card(ds, source)
         reason = ds.get("reason")
-        desc_text += f"- {card_md}\n"
+        modality = ds.get("expected_modality", "tabular")
+        desc_text += f"- {card_md} `[{modality}]`\n"
         if reason:
             desc_text += f"  - {reason}\n"
         actions.append(
@@ -736,7 +741,24 @@ async def on_chat_start():
 @cl.on_message
 async def main(message: cl.Message):
     # ── Update Thread Name for Sidebar Persistence ───────────────────────
+    import shutil
+    from pathlib import Path
+
     user_query = message.content.strip()
+    session_id = cl.user_session.get("id") or "default"
+    if getattr(message, "elements", None):
+        upload_root = Path("data/uploads") / str(session_id)
+        upload_root.mkdir(parents=True, exist_ok=True)
+        for element in message.elements:
+            src_path = getattr(element, "path", None)
+            if not src_path:
+                continue
+            dest = upload_root / Path(getattr(element, "name", "upload.bin")).name
+            shutil.copy2(src_path, dest)
+            local_ref = f"local://{dest.as_posix()}"
+            cl.user_session.set("pending_local_dataset_ref", local_ref)
+        if not user_query:
+            user_query = "Analyze the uploaded dataset"
     groq_ok, groq_message = _check_groq_health(force=True)
     if not groq_ok:
         await cl.Message(
@@ -748,8 +770,7 @@ async def main(message: cl.Message):
         ).send()
         return
 
-    session_id = cl.user_session.get("id") or "default"
-    _session_problems[session_id] = message.content
+    _session_problems[session_id] = user_query
     _session_execution_state[session_id] = {"started": False, "completed": False}
     cl.user_session.set("problem_statement", user_query)
     if cl.data_layer:
@@ -936,6 +957,22 @@ async def on_architecture_finished(action: cl.Action):
                         continue
 
                     dataset_opts = node_state.get("dataset_options", [])
+                    pending_local = cl.user_session.get("pending_local_dataset_ref")
+                    if pending_local and not any(o.get("ref") == pending_local for o in dataset_opts):
+                        suffix = pending_local.lower()
+                        expected = "image" if any(suffix.endswith(ext) for ext in (".png", ".jpg", ".jpeg", ".zip")) else "text" if any(suffix.endswith(ext) for ext in (".txt", ".jsonl")) else "tabular"
+                        dataset_opts = [
+                            {
+                                "title": "Uploaded dataset",
+                                "ref": pending_local,
+                                "url": "",
+                                "source": "local",
+                                "expected_modality": expected,
+                                "supported_by_current_pipeline": True,
+                                "reason": "User-uploaded file from this chat session.",
+                            },
+                            *dataset_opts,
+                        ][:3]
                     selection_error = node_state.get("dataset_selection_error")
                     if selection_error and not dataset_opts:
                         await cl.Message(
@@ -1018,13 +1055,34 @@ async def on_dataset_selected(action: cl.Action):
                     validation = node_state.get("dataset_validation_result", {})
                     async with cl.Step(name="Validate Downloaded Dataset", show_input=False) as validation_step:
                         if validation.get("status") == "ok":
-                            validation_step.output = (
-                                f"Dataset validated as tabular CSV input. Columns detected: `{validation.get('column_count', 0)}`"
-                            )
+                            kind = validation.get("kind", "tabular_csv")
+                            modality = validation.get("detected_modality", "tabular")
+                            if kind == "text_raw":
+                                validation_step.output = "Text upload validated; TF-IDF featurization runs next."
+                            elif kind == "image_raw":
+                                validation_step.output = "Image upload validated; flattened-pixel featurization runs next."
+                            else:
+                                validation_step.output = (
+                                    f"Dataset validated ({modality}). Columns detected: `{validation.get('column_count', 0)}`"
+                                )
                         else:
                             validation_step.output = (
                                 f"Dataset validation failed. Reason: `{validation.get('message', 'unknown validation error')}`"
                             )
+
+                elif node_name == "modality_prepare":
+                    meta = node_state.get("featurization_meta") or {}
+                    template_id = node_state.get("engineer_template_id", "")
+                    async with cl.Step(name="Prepare Cross-Modal Features", show_input=False) as prep_step:
+                        if meta:
+                            prep_step.output = (
+                                f"Featurized {meta.get('modality', 'dataset')} data "
+                                f"({meta.get('row_count', 0)} rows) → `{node_state.get('dataset_csv_path', '')}`"
+                            )
+                        elif template_id:
+                            prep_step.output = f"Using template `{template_id}` on prepared CSV."
+                        else:
+                            prep_step.output = "Cross-modal prepare step completed."
 
                 elif node_name == "eda_analyzer":
                     async with cl.Step(name=_node_label("eda_analyzer"), show_input=False) as eda_step:
@@ -1157,9 +1215,93 @@ async def on_training_launched(action: cl.Action):
 
 
 
+async def _prompt_hpt_approval(snapshot, config: dict) -> None:
+    space = snapshot.values.get("hpt_search_space") or {}
+    candidates = space.get("candidates") or []
+    default = candidates[0] if candidates else {"kind": "rf", "params": {"max_depth": 4, "n_estimators": 80}}
+    cl.user_session.set("pending_hpt_default", default)
+    await cl.Message(
+        content=(
+            "## Optimization Review (HITL)\n\n"
+            f"**Suggested default:** `{default}`\n\n"
+            "Approve to generate training code with these hyperparameters."
+        ),
+        actions=[
+            cl.Action(
+                name="approve_hpt_default",
+                label="Approve default HPT",
+                value="approve",
+                payload={"kind": default.get("kind"), "params": default.get("params", {})},
+            ),
+        ],
+    ).send()
+
+
+async def _continue_execution_stream(config: dict, session_id: str) -> None:
+    """Resume graph after execution mode or HPT approval."""
+    try:
+        async for chunk in _graph.astream(None, config=config, stream_mode="updates"):
+            for node_name, node_state in chunk.items():
+                _update_session_run_state(session_id, node_state)
+                if node_state is None:
+                    continue
+                if node_name == "hpt":
+                    await send_inline_view(
+                        session_id,
+                        view="hpt_console",
+                        title="Hyperparameter Search Space",
+                        url="/public/hpt_console/index.html",
+                        body="Tabular grid search space is ready for HITL review.",
+                    )
+                elif node_name == "execution_sandbox":
+                    _session_execution_state.setdefault(session_id, {"started": True, "completed": False})["completed"] = True
+                    set_stage("execution", "complete")
+                elif node_name == "evaluator":
+                    report = node_state.get("final_report", "")
+                    await cl.Message(content="---\n# Final Evaluation Report\n\n" + report).send()
+                elif node_name == "compliance_renderer":
+                    compliance = node_state.get("compliance_artifacts", [])
+                    if compliance:
+                        manifest = _load_manifest_for_session(session_id) or {}
+                        run_id = manifest.get("run_id") or "unknown"
+                        lines = ["## Compliance Reports", ""]
+                        for report in compliance:
+                            template_id = report.get("template_id", "unknown")
+                            downloads = _compliance_downloads(run_id, template_id)
+                            lines.append(f"- `{template_id}` | [md]({downloads['markdown']})")
+                        await cl.Message(content="\n".join(lines)).send()
+        snapshot = _graph.get_state(config)
+        if "hitl_hpt_pause" in tuple(getattr(snapshot, "next", ()) or ()):
+            await _prompt_hpt_approval(snapshot, config)
+    except Exception:
+        _session_execution_state.setdefault(session_id, {"started": False, "completed": False})["started"] = False
+        import traceback
+        await cl.Message(content=f"**Error during execution:**\n```\n{traceback.format_exc()}\n```").send()
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Action Callbacks - Execution Mode
 # ─────────────────────────────────────────────────────────────────────────────
+@cl.action_callback("approve_hpt_default")
+async def on_approve_hpt_default(action: cl.Action):
+    thread_id = cl.user_session.get("thread_id")
+    config = {"configurable": {"thread_id": thread_id}}
+    session_id = cl.context.session.id if hasattr(cl.context, "session") and hasattr(cl.context.session, "id") else "default"
+    payload = getattr(action, "payload", {}) or cl.user_session.get("pending_hpt_default") or {}
+    approved = {"kind": payload.get("kind"), "params": payload.get("params", {})}
+    _graph.update_state(
+        config,
+        {
+            "hpt_approved_params": approved,
+            "is_hpt_approved": True,
+            "theta_star": {"kind": approved.get("kind"), "params": approved.get("params", {}), "value": None},
+        },
+        as_node="hitl_hpt_pause",
+    )
+    await cl.Message(content="HPT approved. Generating training code...").send()
+    await _continue_execution_stream(config, session_id)
+
+
 @cl.action_callback("select_mode_local")
 @cl.action_callback("select_mode_cloud")
 async def on_execution_mode_selected(action: cl.Action):
@@ -1195,137 +1337,8 @@ async def on_execution_mode_selected(action: cl.Action):
             )
 
         _graph.update_state(config, {"execution_mode": mode}, as_node="execution_choice")
-
-        async for chunk in _graph.astream(None, config=config, stream_mode="updates"):
-            for node_name, node_state in chunk.items():
-                session_id = cl.context.session.id if hasattr(cl.context, "session") and hasattr(cl.context.session, "id") else "default"
-                _update_session_run_state(session_id, node_state)
-                if node_state is None:
-                    continue
-
-                if node_name == "execution_sandbox":
-                    _session_execution_state.setdefault(session_id, {"started": True, "completed": False})["completed"] = True
-                    set_stage('execution', 'complete')
-                    set_stage('arxiv', 'active')
-                    logs = node_state.get("training_logs", "")
-                    url = node_state.get("kernel_url", "")
-
-                    async with cl.Step(name=_node_label("execution_sandbox"), show_input=False) as sb_step:
-                        if url:
-                            sb_step.output = (
-                                "**Cloud Execution Active**\n"
-                                "Keep this tab open while we poll Kaggle for results.\n\n"
-                                f"**Kaggle Link:** [View on Kaggle]({url})\n\n"
-                                "---\n"
-                                "**Logs retrieved from Cloud:**\n"
-                                f"```text\n{logs[:3000]}\n```"
-                            )
-                        else:
-                            sb_step.output = (
-                                "**Local Training Complete.**\n"
-                                "Final Logs:\n"
-                                f"```text\n{logs[:4000]}\n```"
-                            )
-
-                elif node_name == "debugger":
-                    retries = node_state.get("retry_count", 1)
-                    source = node_state.get("active_code_source", "debugger")
-                    revision = node_state.get("code_revision", 0)
-                    validation = node_state.get("code_validation_result", {}) or {}
-                    async with cl.Step(name=_node_label("debugger"), show_input=False) as dbg_step:
-                        dbg_step.output = (
-                            f"**Error Detected**\n"
-                            f"Auto-healing script (Attempt {retries}/3) ...\n"
-                            f"Source=`{source}` Revision=`{revision}`\n"
-                            f"Validation: {validation.get('message', 'pending')}"
-                        )
-                        await cl.Message(
-                            content=(
-                                f"**Execution Failed**. OmniML Debugger Agent has been invoked "
-                                f"(Attempt {retries}/3) to regenerate a deterministic training script.\n\n"
-                                f"**Source:** `{source}`  \n"
-                                f"**Revision:** `{revision}`  \n"
-                                f"**Validation:** {validation.get('message', 'pending')}"
-                            )
-                        ).send()
-
-                elif node_name == "arxiv_comparator":
-                    set_stage('arxiv', 'complete')
-                    set_stage('deployment', 'active')
-                    benchmarks = node_state.get("arxiv_benchmarks", "")
-                    benchmark_artifacts = node_state.get("benchmark_artifacts", {})
-                    async with cl.Step(name="ArXiv Comparator", show_input=False) as ax_step:
-                        ax_step.output = f"**Literature Benchmarks and Gap Analysis Complete:**\n\n{benchmarks}"
-                    await cl.Message(
-                        content=(
-                            "## Benchmark Comparison\n\n"
-                            f"{benchmarks}\n\n"
-                            f"**Source Status:** `{benchmark_artifacts.get('source_status', 'unknown')}`\n"
-                            f"**Cache Hit:** `{benchmark_artifacts.get('cache_hit', False)}`\n"
-                            f"**Comparability:** `{benchmark_artifacts.get('comparability', {}).get('score', 'n/a')}`"
-                        )
-                    ).send()
-
-                elif node_name == "model_deployer":
-                    set_stage('deployment', 'complete')
-                    set_stage('report', 'active')
-                    artifacts = node_state.get("deployment_artifacts")
-                    if artifacts:
-                        await send_inline_view(
-                            session_id,
-                            view="deployment_dashboard",
-                            title="Model Deployment and Export",
-                            url=f"/public/deployment_dashboard/index.html?session_id={session_id}",
-                            body="Review exports, benchmark status, fairness artifacts, and compliance reports in the embedded deployment dashboard below.",
-                        )
-                    else:
-                        await cl.Message(content="Model export skipped - no artifacts generated.").send()
-
-                elif node_name == "evaluator":
-                    set_stage('report', 'complete')
-                    report = node_state.get("final_report", "")
-
-                    elements = []
-                    import os
-                    if os.path.exists("telemetry_distribution.png"):
-                        elements.append(cl.Image(name="Feature Correlation", path="telemetry_distribution.png", display="inline"))
-                    if os.path.exists("loss_curve.png"):
-                        elements.append(cl.Image(name="Loss Curve", path="loss_curve.png", display="inline"))
-                    if os.path.exists("confusion_matrix.png"):
-                        elements.append(cl.Image(name="Confusion Matrix", path="confusion_matrix.png", display="inline"))
-
-                    await cl.Message(content="---\n# Final Evaluation Report\n\n" + report, elements=elements).send()
-
-                elif node_name == "fairness_auditor":
-                    fairness = node_state.get("fairness_artifacts", {})
-                    findings = fairness.get("findings", [])
-                    await cl.Message(
-                        content=(
-                            "## Bias and Fairness Audit\n\n"
-                            f"**Status:** `{fairness.get('status', 'unknown')}`\n"
-                            f"**Protected Attributes:** `{', '.join(fairness.get('confirmed_sensitive_features', [])) or 'auto-detected / none'}`\n"
-                            f"**Findings:** `{len(findings)}`\n\n"
-                            f"{fairness.get('narrative', 'No fairness narrative available.')}"
-                        )
-                    ).send()
-
-                elif node_name == "compliance_renderer":
-                    compliance = node_state.get("compliance_artifacts", [])
-                    if compliance:
-                        lines = ["## Compliance Reports", ""]
-                        manifest = _load_manifest_for_session(session_id) or _normalize_manifest_payload(node_state) or {}
-                        run_id = manifest.get("run_id") or (_session_runs.get(session_id) or "unknown")
-                        for report in compliance:
-                            template_id = report.get("template_id", "unknown")
-                            completeness = report.get("validation", {}).get("completeness", "unknown")
-                            downloads = _compliance_downloads(run_id, template_id)
-                            lines.append(
-                                f"- `{template_id}` | completeness=`{completeness}` | "
-                                f"[md]({downloads['markdown']}) | "
-                                f"[html]({downloads['html']}) | "
-                                f"[pdf]({downloads['pdf']})"
-                            )
-                        await cl.Message(content="\n".join(lines)).send()
+        await _continue_execution_stream(config, session_id)
+        return
 
     except Exception:
         _session_execution_state.setdefault(session_id, {"started": False, "completed": False})["started"] = False
@@ -1363,7 +1376,7 @@ async def _run_training_pipeline_logic(thread_id: str, session_id: str):
             if node_state is None:
                 continue
 
-            if node_name == "hpt_node":
+            if node_name == "hpt":
                 await send_inline_view(
                     session_id,
                     view="hpt_console",

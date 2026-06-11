@@ -1,3 +1,8 @@
+"""
+NOT OmniML paper XAI (SHAP/LIME). This module is for time-series anomaly Granger causality only.
+See anomallm/xai.py for tabular explainability used in the AutoML pipeline.
+"""
+
 import pandas as pd
 import numpy as np
 import networkx as nx
@@ -5,9 +10,10 @@ from statsmodels.tsa.api import VAR
 from statsmodels.tsa.stattools import adfuller
 from typing import Tuple, List, Optional
 
+
 class GrangerExplainer:
     """
-    Causality Engine using VAR Model and Granger Causality tests to compute root cause and cascade analysis.
+    Causality engine using VAR and Granger tests for multivariate time-series anomaly windows.
     """
     def __init__(self, maxlags: int = 3, significance_level: float = 0.05):
         """

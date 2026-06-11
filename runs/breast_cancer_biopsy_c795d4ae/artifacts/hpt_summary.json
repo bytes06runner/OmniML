@@ -1,0 +1,140 @@
+{
+  "hpt_best_params": {
+    "max_depth": 4,
+    "n_estimators": 80
+  },
+  "hpt_best_value": 1.0,
+  "hpt_trials": [
+    {
+      "trial": 1,
+      "kind": "rf",
+      "params": {
+        "max_depth": 4,
+        "n_estimators": 80
+      },
+      "value": 1.0
+    },
+    {
+      "trial": 2,
+      "kind": "rf",
+      "params": {
+        "max_depth": 4,
+        "n_estimators": 150
+      },
+      "value": 1.0
+    },
+    {
+      "trial": 3,
+      "kind": "rf",
+      "params": {
+        "max_depth": 8,
+        "n_estimators": 80
+      },
+      "value": 1.0
+    },
+    {
+      "trial": 4,
+      "kind": "rf",
+      "params": {
+        "max_depth": 8,
+        "n_estimators": 150
+      },
+      "value": 1.0
+    },
+    {
+      "trial": 5,
+      "kind": "rf",
+      "params": {
+        "max_depth": null,
+        "n_estimators": 80
+      },
+      "value": 1.0
+    },
+    {
+      "trial": 6,
+      "kind": "rf",
+      "params": {
+        "max_depth": null,
+        "n_estimators": 150
+      },
+      "value": 1.0
+    },
+    {
+      "trial": 7,
+      "kind": "logreg",
+      "params": {
+        "C": 1.0
+      },
+      "value": 0.9824561403508771
+    }
+  ],
+  "theta_star": {
+    "kind": "rf",
+    "params": {
+      "max_depth": 4,
+      "n_estimators": 80
+    },
+    "value": 1.0
+  },
+  "search_space": {
+    "task_type": "classification",
+    "strategy": "grid",
+    "candidates": [
+      {
+        "kind": "rf",
+        "params": {
+          "max_depth": 4,
+          "n_estimators": 80
+        }
+      },
+      {
+        "kind": "rf",
+        "params": {
+          "max_depth": 4,
+          "n_estimators": 150
+        }
+      },
+      {
+        "kind": "rf",
+        "params": {
+          "max_depth": 8,
+          "n_estimators": 80
+        }
+      },
+      {
+        "kind": "rf",
+        "params": {
+          "max_depth": 8,
+          "n_estimators": 150
+        }
+      },
+      {
+        "kind": "rf",
+        "params": {
+          "max_depth": null,
+          "n_estimators": 80
+        }
+      },
+      {
+        "kind": "rf",
+        "params": {
+          "max_depth": null,
+          "n_estimators": 150
+        }
+      },
+      {
+        "kind": "logreg",
+        "params": {
+          "C": 1.0
+        }
+      }
+    ],
+    "param_names": [
+      "kind",
+      "max_depth",
+      "n_estimators",
+      "C"
+    ]
+  },
+  "run_id": "breast_cancer_biopsy_c795d4ae"
+}

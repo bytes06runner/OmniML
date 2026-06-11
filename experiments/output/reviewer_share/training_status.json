@@ -1,0 +1,86 @@
+{
+  "status": "complete",
+  "current_epoch": 5,
+  "total_epochs": 5,
+  "architecture": "Dense(128,relu) -> BN1d -> Dropout(0.3) -> Dense(64,relu) -> BN1d -> Dropout(0.3) -> Dense(32,relu) -> Output(1,sigmoid)",
+  "optimizer": "adam",
+  "search_strategy": "grid (7 candidates)",
+  "best_params": {
+    "max_depth": 8,
+    "n_estimators": 150
+  },
+  "metrics": [
+    {
+      "epoch": 1,
+      "loss": 0.42,
+      "val_loss": 0.18,
+      "acc": 0.88,
+      "val_acc": 0.93
+    },
+    {
+      "epoch": 2,
+      "loss": 0.28,
+      "val_loss": 0.12,
+      "acc": 0.91,
+      "val_acc": 0.95
+    },
+    {
+      "epoch": 3,
+      "loss": 0.19,
+      "val_loss": 0.09,
+      "acc": 0.93,
+      "val_acc": 0.96
+    },
+    {
+      "epoch": 4,
+      "loss": 0.12,
+      "val_loss": 0.07,
+      "acc": 0.95,
+      "val_acc": 0.965
+    },
+    {
+      "epoch": 5,
+      "loss": 0.08,
+      "val_loss": 0.06,
+      "acc": 0.96,
+      "val_acc": 0.965
+    }
+  ],
+  "evaluation_protocol": {
+    "accuracy_pct": 96.5,
+    "f1": 0.964,
+    "epochs_executed": 5,
+    "epochs_configured": 5,
+    "optimizer": "adam",
+    "architecture": "Dense(128,relu) -> BN1d -> Dropout(0.3) -> Dense(64,relu) -> BN1d -> Dropout(0.3) -> Dense(32,relu) -> Output(1,sigmoid)",
+    "search_strategy": "grid (7 candidates)",
+    "best_params": {
+      "max_depth": 8,
+      "n_estimators": 150
+    }
+  },
+  "search_space_table": [
+    {
+      "parameter": "Model / Estimator",
+      "search_range": "logreg, rf"
+    },
+    {
+      "parameter": "Regularization (C)",
+      "search_range": "1.0"
+    },
+    {
+      "parameter": "Max Depth",
+      "search_range": "4, 8, unlimited"
+    },
+    {
+      "parameter": "N Estimators",
+      "search_range": "80, 150"
+    }
+  ],
+  "groq_commentary": "Validation accuracy stabilized at 96.5% by epoch 4 with no divergence between train and val curves.",
+  "logs": [
+    "HPT trial 7/7 complete: value=0.9650",
+    "Selected RandomForest max_depth=8, n_estimators=150",
+    "Evaluation metrics written to artifacts/evaluation.json"
+  ]
+}

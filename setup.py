@@ -32,6 +32,9 @@ setup(
         "datasets",
         "requests",
         "pydantic>=2.0.0",
+        "shap>=0.45.0",
+        "lime>=0.2.0.1",
+        "imbalanced-learn>=0.12.0",
     ],
     python_requires=">=3.8",
 )

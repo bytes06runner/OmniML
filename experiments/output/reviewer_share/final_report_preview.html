@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><meta name="color-scheme" content="light only"><title>OmniML Final Report Preview</title><style>
+html {
+  color-scheme: light only;
+  background: #ffffff;
+}
+body {
+  font-family: "Segoe UI", Arial, sans-serif;
+  max-width: 920px;
+  margin: 40px auto;
+  padding: 0 24px 48px;
+  line-height: 1.55;
+  background: #ffffff !important;
+  color: #111827 !important;
+}
+h1, h2, h3, p, li, td, th, code, span, div {
+  color: inherit;
+}
+h1 {
+  color: #111827 !important;
+  border-bottom: 2px solid #6366f1;
+  padding-bottom: 8px;
+}
+h2 {
+  color: #1f2937 !important;
+  margin-top: 28px;
+}
+p, li {
+  color: #111827 !important;
+}
+table {
+  border-collapse: collapse;
+  width: 100%;
+  margin: 12px 0 20px;
+  background: #ffffff;
+}
+th, td {
+  border: 1px solid #9ca3af;
+  padding: 10px 12px;
+  text-align: left;
+  background: #ffffff !important;
+  color: #111827 !important;
+}
+th {
+  background: #e5e7eb !important;
+  color: #111827 !important;
+  font-weight: 700;
+}
+tbody tr:nth-child(even) td {
+  background: #f9fafb !important;
+}
+tbody tr.highlight td {
+  background: #d1fae5 !important;
+  color: #065f46 !important;
+  font-weight: 600;
+}
+code {
+  background: #f3f4f6 !important;
+  color: #111827 !important;
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+.badge {
+  display: inline-block;
+  background: #6366f1 !important;
+  color: #ffffff !important;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  margin-bottom: 16px;
+}
+pre {
+  white-space: pre-wrap;
+  background: #f9fafb !important;
+  color: #111827 !important;
+  border: 1px solid #d1d5db;
+  padding: 16px;
+  border-radius: 8px;
+}
+</style></head><body><span class="badge">Final Evaluation Report (Chainlit message preview)</span>
+<h1>OmniML Autonomous ML Run Report</h1>
+<h2>Architecture Selection</h2>
+<ul>
+<li>User query: Diagnose breast cancer from biopsy records</li>
+<li>Architecture: Dense(128,relu) -> BN1d -> Dropout(0.3) -> Dense(64,relu) -> BN1d -> Dropout(0.3) -> Dense(32,relu) -> Output(1,sigmoid)</li>
+<li>Dataset: utkarshx27/breast-cancer-wisconsin-diagnostic-dataset</li>
+</ul>
+<h2>Evaluation Protocol</h2>
+<table>
+<thead><tr><th>Field</th><th>Value</th></tr></thead>
+<tbody>
+<tr class="highlight"><td>Accuracy</td><td>96.5%</td></tr>
+<tr class="highlight"><td>F1</td><td>0.964</td></tr>
+<tr><td>Epochs</td><td>5 executed / 5 configured</td></tr>
+<tr><td>Optimizer</td><td>Adam</td></tr>
+<tr><td>Architecture</td><td>Dense(128,relu) -> BN1d -> Dropout(0.3) -> Dense(64,relu) -> BN1d -> Dropout(0.3) -> Dense(32,relu) -> Output(1,sigmoid)</td></tr>
+<tr><td>Search Strategy</td><td>grid (7 candidates)</td></tr>
+<tr><td>Selected Hyperparameters</td><td><code>{'max_depth': 8, 'n_estimators': 150}</code></td></tr>
+</tbody>
+</table>
+<h2>Hyperparameter Search Space</h2>
+<table>
+<thead><tr><th>Parameter</th><th>Search Range</th></tr></thead>
+<tbody>
+<tr><td>Model / Estimator</td><td>logreg, rf</td></tr>
+<tr><td>Regularization (C)</td><td>1.0</td></tr>
+<tr><td>Max Depth</td><td>4, 8, unlimited</td></tr>
+<tr><td>N Estimators</td><td>80, 150</td></tr>
+</tbody>
+</table>
+<h2>Verdict</h2>
+<p>Evidence-backed run summary generated from run-scoped artifacts.</p>
+</body></html>

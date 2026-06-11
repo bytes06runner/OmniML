@@ -100,6 +100,15 @@ User Query
   -> Deployment dashboard + downloadable reports
 ```
 
+## Path A vs Path B (training execution)
+
+| Path | Default | How to enable | What runs |
+|------|---------|---------------|-----------|
+| **B (sklearn)** | Yes | `training_path: sklearn` in Training Config, or `OMNIML_TRAINING_PATH=sklearn` | Fast tabular/text/image training on featurized CSV via sklearn grid search |
+| **A (PyTorch)** | No | `training_path: pytorch` in Training Config, or `OMNIML_TRAINING_PATH=pytorch` | Compiles the approved React Flow graph to `OmniMLNet` and trains with real epoch metrics |
+
+Path A uses the same featurized CSV pipeline as cross-modal Path B (`features.csv` for text/image). UI SHAP/LIME remain sklearn-oriented; PyTorch runs record `explanation_method: pytorch_limited` in XAI artifacts.
+
 Important current behavior:
 - training does not begin until `execution_choice` is selected
 - report download links resolve through run-scoped artifact refs, not hardcoded filesystem paths
@@ -223,6 +232,77 @@ The current embedded views include:
 - training console
 - HPT console
 - deployment dashboard
+
+## Paper alignment roadmap
+
+For AI agents and maintainers aligning the codebase with the research paper (`main (5).pdf`), see **[docs/PAPER_ALIGNMENT_ROADMAP.md](docs/PAPER_ALIGNMENT_ROADMAP.md)** — waves, phases, claim matrix, file map, and progress tracker.
+
+### Architecture execution (Path B)
+
+The React Flow canvas is a **human-reviewed design artifact**. Tabular training executes via the deterministic **sklearn** template in `anomallm/engineer.py`. Neural graph compilation remains available for future Path A work.
+
+### Reproducing offline experiment metrics
+
+```bash
+pip install -e .
+python -m experiments.run --dataset breast_cancer --folds 5
+python -m experiments.run --dataset uci_breast_cancer --folds 5
+python -m experiments.run --dataset imdb --folds 5 --frameworks omniml,sklearn_rf
+python -m experiments.run --dataset cifar10 --folds 5 --frameworks omniml,sklearn_rf
+python -m experiments.compare --latest
+```
+
+CIFAR-10 uses a **flattened-pixel sklearn proxy** (not a CNN in the UI). Requires `torchvision` (`pip install torchvision`).
+
+### Cross-modal Chainlit (text / image)
+
+In the UI, describe a text or image task (e.g. "IMDB sentiment" or "CIFAR-10 classification"). Pick a **builtin** dataset:
+
+- `omniml/imdb-text-proxy` — TF-IDF text features (20newsgroups proxy)
+- `omniml/cifar10-image-proxy` — flattened CIFAR-10 pixels for sklearn
+
+**Uploads** (attach a file to your message):
+
+- Text: `.jsonl` with `text` + `label`, or `.txt` with `label<TAB>text` per line
+- Image: `.zip` of images (class = subfolder name) or a single `.png`/`.jpg`
+
+Training still uses Path B sklearn on featurized `features.csv`; XAI uses modality-specific branches.
+
+Optional baselines (see `experiments/baselines/README.md`):
+
+```bash
+pip install autokeras h2o
+python -m experiments.run --dataset breast_cancer --frameworks omniml,sklearn_rf,autokeras,h2o
+```
+
+Ablation flag:
+
+```bash
+python -m experiments.run --dataset breast_cancer --ablation monolithic
+```
+
+Outputs: `experiments/output/<timestamp>/metrics.json`, `experiments/output/table_ii.md`.
+
+Evidence appendix from a Chainlit run:
+
+```bash
+python scripts/export_evidence_appendix.py runs/<run_id>/manifest.json
+```
+
+### Smoke tests
+
+```bash
+pytest tests/
+```
+
+### Known limitations (paper alignment)
+
+- ONNX export is a placeholder bytes stub.
+- AutoKeras/H2O baselines are optional and may report `skipped_*` in CI.
+- Full Chainlit auto-bypass for `OMNIML_ENABLE_HITL=0` is not implemented; ablations use the offline runner.
+- CIFAR-10 / IMDB in the UI use documented proxies (not full HF IMDB or in-app CNN).
+- Text/image XAI explains TF-IDF or flattened feature CSVs; raw-token or CNN SHAP is not supported in-app.
+- Imbalance handling (Path B): SMOTE, ADASYN, class weights, and focal-inspired sample weights for sklearn; not full neural focal loss.
 
 ## Plugin SDK
 

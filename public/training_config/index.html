@@ -46,6 +46,16 @@
         <div><label>Test Size</label><input id="test_size" type="number" min="0.05" max="0.4" step="0.05"><div class="hint">Validation holdout fraction.</div></div>
         <div><label>Batch Size</label><select id="batch_size"><option>16</option><option>32</option><option selected>64</option><option>128</option><option>256</option></select><div class="hint">Samples per optimizer step.</div></div>
       </div>
+      <div class="grid" style="margin-top:16px">
+        <div>
+          <label>Execution Path</label>
+          <select id="training_path">
+            <option value="sklearn" selected>sklearn (default, Path B)</option>
+            <option value="pytorch">pytorch (architect graph, Path A)</option>
+          </select>
+          <div class="hint">Path A trains the approved React Flow MLP on featurized CSV data.</div>
+        </div>
+      </div>
       <div class="triple" style="margin-top:16px">
         <div><label>Optimizer</label><select id="optimizer"><option selected>adam</option><option>sgd</option><option>adamw</option><option>rmsprop</option></select></div>
         <div><label>Learning Rate</label><input id="lr" type="number" min="0.00001" max="0.1" step="0.00001"></div>
@@ -117,6 +127,7 @@ const SESSION = params.get('session_id') || 'default';
 let pluginCatalog = [];
 
 const defaults = {
+  training_path: 'sklearn',
   epochs: 50, test_size: 0.2, batch_size: 64, optimizer: 'adam', lr: 0.001, hpt_trials: 15, seed: 42,
   early_stop: true, dropout: true, class_weights: true, shuffle: true,
   compliance_modes: ['eu_ai_act','fda_samd','soc2'],
@@ -133,6 +144,7 @@ function readForm(){
   const compliance_modes = Array.from(document.querySelectorAll('.compliance:checked')).map(el => el.value);
   const enabled_plugins = Array.from(document.querySelectorAll('.plugin-toggle:checked')).map(el => el.value);
   return {
+    training_path: document.getElementById('training_path').value,
     epochs: parseInt(document.getElementById('epochs').value, 10),
     test_size: parseFloat(document.getElementById('test_size').value),
     batch_size: parseInt(document.getElementById('batch_size').value, 10),
@@ -164,6 +176,7 @@ function readForm(){
 }
 
 function fillForm(config){
+  document.getElementById('training_path').value = config.training_path || 'sklearn';
   document.getElementById('epochs').value = config.epochs;
   document.getElementById('test_size').value = config.test_size;
   document.getElementById('batch_size').value = String(config.batch_size);

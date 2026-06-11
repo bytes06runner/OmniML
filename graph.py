@@ -1,15 +1,10 @@
 """
-graph.py — AnomaLLM v3 LangGraph Pipeline
-==========================================
-Architecture:
-  Node 1: architect_sourcer    → Analyze query, search Kaggle, suggest architecture
-  HITL Pause                   → User selects dataset via Chainlit UI
-  Node 2: dataset_downloader   → Download the selected dataset CSV to disk (REAL)
-  Node 3: engineer             → Generate full PyTorch training script using real CSV path
-  Node 4: execution_sandbox    → Run script in subprocess, capture stdout/stderr
-  Node 5: evaluator            → Produce a structured Markdown report
+graph.py — OmniML LangGraph Pipeline
+====================================
+Multi-stage AutoML orchestration with HITL checkpoints, training sandbox,
+explainability, benchmarking, and compliance reporting.
 
-Author: AnomaLLM v3 / Antigravity
+Author: OmniML
 """
 
 import os
@@ -116,6 +111,11 @@ class AgentState(TypedDict):
     hpt_best_params: Optional[dict]
     hpt_best_value: Optional[float]
     hpt_trials: Optional[list]
+    theta_star: Optional[dict]
+    hpt_approved_params: Optional[dict]
+    is_hpt_approved: Optional[bool]
+    task_representation: Optional[dict]
+    engineer_template_id: Optional[str]
     
     # Training fields
     epoch_metrics: Optional[list]
@@ -203,6 +203,10 @@ training_state = {
   "total_epochs": 50,
   "metrics": [],
   "architecture": "",
+  "optimizer": "",
+  "search_strategy": "",
+  "evaluation_protocol": {},
+  "search_space_table": [],
   "best_params": {},
   "groq_commentary": "",
   "logs": [],
@@ -275,6 +279,65 @@ def _resilient_json_parse(raw: str) -> Optional[Any]:
     # but we'll stop here to avoid corrupting data.
     
     return None
+
+
+# ─────────────────────────────────────────────
+# 3b. Task abstraction (paper phi(P))
+# ─────────────────────────────────────────────
+def task_abstraction_node(state: AgentState) -> dict:
+    query = state.get("user_query", "classification task")
+    lowered = query.lower()
+    modality = "tabular"
+    objective = "classification"
+    if any(token in lowered for token in ("image", "cifar", "vision", "photo", "pixel")):
+        modality = "image"
+    elif any(token in lowered for token in ("text", "nlp", "sentiment", "imdb", "review", "language")):
+        modality = "text"
+    elif any(token in lowered for token in ("regress", "forecast", "price", "rmse")):
+        objective = "regression"
+    risk_level = "high" if any(token in lowered for token in ("cancer", "medical", "diagnos", "fraud", "clinical")) else "medium"
+    task_representation = {
+        "modality": modality,
+        "objective": objective,
+        "constraints": ["human_in_the_loop", "evidence_backed_reporting"],
+        "risk_level": risk_level,
+        "raw_prompt": query,
+    }
+    bundle = load_or_create_bundle(state)
+    paths = ensure_run_paths(bundle.run_manifest.run_id)
+    bundle.run_manifest.paths = {
+        "root": paths.root,
+        "artifacts": paths.artifacts,
+        "plots": paths.plots,
+        "reports": paths.reports,
+        "exports": paths.exports,
+        "logs": paths.logs,
+    }
+    bundle.run_manifest.metadata["task_representation"] = task_representation
+    write_json(os.path.join(paths.root, "manifest.json"), bundle.run_manifest.model_dump(mode="json"))
+    return {"task_representation": task_representation, "modality": modality, "run_manifest": bundle.run_manifest.model_dump(mode="json")}
+
+
+def route_after_modality(state: AgentState) -> str:
+    modality = state.get("modality", "tabular")
+    if modality == "tabular":
+        return "eda_analyzer"
+    return "modality_prepare"
+
+
+def modality_prepare_node(state: AgentState) -> dict:
+    from anomallm.modality_prepare import run_modality_prepare
+    try:
+        return run_modality_prepare(state)
+    except Exception as exc:
+        _safe_log(f"[modality_prepare] Failed: {exc}")
+        return {
+            "dataset_acquisition_error": _build_dataset_acquisition_error(
+                "featurization_failed",
+                str(exc),
+                state.get("selected_dataset", ""),
+            ),
+        }
 
 
 # ─────────────────────────────────────────────
@@ -436,19 +499,67 @@ UNSUPPORTED_TABULAR_KEYWORDS = [
 ]
 
 
-def _annotate_dataset_candidate(candidate: dict) -> dict:
+def _target_modality_from_state(state: AgentState) -> str:
+    task_repr = state.get("task_representation") or {}
+    return task_repr.get("modality") or state.get("modality") or "tabular"
+
+
+def _builtin_dataset_options(modality: str) -> List[dict]:
+    if modality == "text":
+        return [
+            {
+                "title": "OmniML IMDB Text Proxy (TF-IDF)",
+                "ref": "omniml/imdb-text-proxy",
+                "url": "",
+                "source": "builtin",
+                "expected_modality": "text",
+                "supported_by_current_pipeline": True,
+                "reason": "Built-in text demo: 20newsgroups TF-IDF features (IMDB proxy).",
+            }
+        ]
+    if modality == "image":
+        return [
+            {
+                "title": "OmniML CIFAR-10 Proxy (flattened pixels)",
+                "ref": "omniml/cifar10-image-proxy",
+                "url": "",
+                "source": "builtin",
+                "expected_modality": "image",
+                "supported_by_current_pipeline": True,
+                "reason": "Built-in image demo: CIFAR-10 subsample as flattened pixels for sklearn.",
+            }
+        ]
+    return []
+
+
+def _annotate_dataset_candidate(candidate: dict, target_modality: str = "tabular") -> dict:
     annotated = dict(candidate)
     haystack = " ".join(
         str(candidate.get(key, "")) for key in ("title", "ref", "description", "url")
     ).lower()
-    supported = not any(keyword in haystack for keyword in UNSUPPORTED_TABULAR_KEYWORDS)
-    annotated["expected_modality"] = "tabular"
+    if target_modality == "image":
+        supported = True
+        expected = "image"
+        reason = "Image-oriented dataset candidate (featurized in modality_prepare)."
+    elif target_modality == "text":
+        supported = "text" in haystack or "nlp" in haystack or "sentiment" in haystack
+        expected = "text"
+        reason = (
+            "Compatible with text featurization workflow."
+            if supported
+            else "May require builtin text proxy for reliable featurization."
+        )
+    else:
+        supported = not any(keyword in haystack for keyword in UNSUPPORTED_TABULAR_KEYWORDS)
+        expected = "tabular"
+        reason = (
+            "Compatible with the tabular CSV workflow."
+            if supported
+            else "Excluded for tabular-only ranking (use builtin cross-modal datasets)."
+        )
+    annotated["expected_modality"] = expected
     annotated["supported_by_current_pipeline"] = supported
-    annotated["reason"] = (
-        "Compatible with the current tabular CSV workflow."
-        if supported
-        else "Excluded because the current v1 workflow supports tabular CSV datasets only."
-    )
+    annotated["reason"] = reason
     return annotated
 
 
@@ -472,18 +583,20 @@ def _validation_failure(kind: str, message: str, ref: str = "", path: str = "") 
     }
 
 def dataset_ranker_node(state: AgentState) -> dict:
-    """Resolve candidate datasets and keep only tabular-compatible options."""
+    """Resolve candidate datasets; prepend builtin options for text/image tasks."""
     import json
+    target_modality = _target_modality_from_state(state)
+    builtin_opts = _builtin_dataset_options(target_modality)
     kr = state.get("kaggle_results", "[]")
     
     try: kr_json = json.loads(kr)
     except: kr_json = []
     
-    combined = [_annotate_dataset_candidate(c) for c in kr_json if "error" not in c]
+    combined = [_annotate_dataset_candidate(c, target_modality) for c in kr_json if "error" not in c]
     
     arch_full = "Custom Visual Graph" 
     
-    if not combined:
+    if not combined and not builtin_opts:
         return {
             "architecture": arch_full,
             "dataset_selection_error": "Kaggle search authentication or network failed.",
@@ -494,15 +607,17 @@ def dataset_ranker_node(state: AgentState) -> dict:
                 "source": "kaggle",
                 "reason": "Search authentication or network failed.",
                 "supported_by_current_pipeline": False,
-                "expected_modality": "tabular",
+                "expected_modality": target_modality,
             }]
         }
 
     supported_candidates = [c for c in combined if c.get("supported_by_current_pipeline")]
-    if not supported_candidates:
+    if target_modality in {"text", "image"} and not supported_candidates:
+        supported_candidates = []
+    if not supported_candidates and not builtin_opts:
         return {
             "architecture": arch_full,
-            "dataset_selection_error": "No tabular CSV-compatible datasets were found for the current workflow.",
+            "dataset_selection_error": f"No compatible datasets found for modality '{target_modality}'.",
             "dataset_options": [],
         }
 
@@ -537,10 +652,13 @@ def dataset_ranker_node(state: AgentState) -> dict:
         c["reason"] = "Fallback allocation"
         dataset_options = [c]
 
+    merged_options = builtin_opts + [opt for opt in dataset_options if opt.get("ref") not in {b.get("ref") for b in builtin_opts}]
+    merged_options = merged_options[:3]
+
     return {
         "architecture": arch_full,
         "dataset_selection_error": None,
-        "dataset_options": dataset_options
+        "dataset_options": merged_options,
     }
 
 
@@ -611,7 +729,16 @@ def dataset_downloader_node(state: AgentState) -> dict:
             source = opt.get("source", "kaggle")
             break
 
-    if source == "huggingface":
+    run_id = (state.get("run_manifest") or {}).get("run_id") or state.get("problem_id", "run_default")
+    if ref.startswith("local://"):
+        from anomallm.builtin_datasets import local_upload_download_tool
+        download_result = local_upload_download_tool(ref)
+        source = "local"
+    elif source == "builtin" or ref.startswith("omniml/"):
+        from anomallm.builtin_datasets import builtin_download_tool
+        download_result = builtin_download_tool(ref, run_id=run_id)
+        source = "builtin"
+    elif source == "huggingface":
         download_result = hf_download_tool.invoke({"dataset_ref": ref})
     else:
         download_result = kaggle_download_tool.invoke({"dataset_ref": ref})
@@ -633,11 +760,15 @@ def dataset_downloader_node(state: AgentState) -> dict:
     else:
         _safe_log(f"[downloader] Download failed: {download_result.get('error_message', 'unknown error')}")
 
+    detected_modality = download_result.get("detected_modality") or _target_modality_from_state(state)
+    if download_result.get("featurization"):
+        detected_modality = download_result["featurization"].get("modality", detected_modality)
+
     dataset_profile = DatasetProfile(
         source=download_result.get("source", source),
         dataset_ref=ref or "",
         csv_path=csv_path,
-        modality="tabular",
+        modality=detected_modality,
         provenance={
             "summary": f"Selected dataset reference: {ref or 'local_upload'}",
             "download_status": status,
@@ -661,11 +792,11 @@ def dataset_downloader_node(state: AgentState) -> dict:
 
 
 def dataset_validation_node(state: AgentState) -> dict:
-    """
-    Validate that the downloaded artifact exists and is compatible with the v1 tabular flow.
-    """
+    """Validate downloaded or uploaded artifacts (tabular CSV, text raw, image raw)."""
     import pandas as pd
     from pathlib import Path
+
+    from anomallm.featurize import is_featurized_csv
 
     ref = state.get("selected_dataset", "")
     download_result = state.get("dataset_download_result") or {}
@@ -687,10 +818,53 @@ def dataset_validation_node(state: AgentState) -> dict:
         return _validation_failure("download_failed", f"Downloaded file was not found on disk: {resolved_path}", ref, resolved_path)
 
     suffix = path.suffix.lower()
+    detected_modality = download_result.get("detected_modality") or _target_modality_from_state(state)
+    validation_kind = download_result.get("kind", "")
+
+    if suffix in {".txt", ".jsonl"} or validation_kind == "text_raw":
+        dataset_profile = DatasetProfile.model_validate(state.get("dataset_profile") or {})
+        dataset_profile.csv_path = resolved_path
+        dataset_profile.modality = "text"
+        return {
+            "dataset_csv_path": resolved_path,
+            "dataset_profile": dataset_profile.model_dump(mode="json"),
+            "dataset_validation_result": {
+                "status": "ok",
+                "kind": "text_raw",
+                "resolved_path": resolved_path,
+                "detected_modality": "text",
+                "detected_format": suffix.lstrip(".") or "text",
+            },
+            "dataset_acquisition_error": None,
+            "modality": "text",
+        }
+
+    if (
+        suffix in {".png", ".jpg", ".jpeg", ".bmp", ".gif", ".webp", ".zip"}
+        or path.is_dir()
+        or validation_kind == "image_raw"
+    ):
+        dataset_profile = DatasetProfile.model_validate(state.get("dataset_profile") or {})
+        dataset_profile.csv_path = resolved_path
+        dataset_profile.modality = "image"
+        return {
+            "dataset_csv_path": resolved_path,
+            "dataset_profile": dataset_profile.model_dump(mode="json"),
+            "dataset_validation_result": {
+                "status": "ok",
+                "kind": "image_raw",
+                "resolved_path": resolved_path,
+                "detected_modality": "image",
+                "detected_format": suffix.lstrip(".") or "dir",
+            },
+            "dataset_acquisition_error": None,
+            "modality": "image",
+        }
+
     if suffix not in {".csv", ".tsv"}:
         return _validation_failure(
             "unsupported_format",
-            f"Downloaded artifact is '{suffix or 'unknown'}', but the current workflow supports tabular CSV-compatible datasets only.",
+            f"Downloaded artifact format '{suffix or 'unknown'}' is not supported.",
             ref,
             resolved_path,
         )
@@ -713,9 +887,14 @@ def dataset_validation_node(state: AgentState) -> dict:
             resolved_path,
         )
 
+    if download_result.get("featurization"):
+        detected_modality = download_result["featurization"].get("modality", detected_modality)
+    elif is_featurized_csv(resolved_path):
+        detected_modality = detected_modality if detected_modality in {"text", "image"} else _target_modality_from_state(state)
+
     dataset_profile = DatasetProfile.model_validate(state.get("dataset_profile") or {})
     dataset_profile.csv_path = resolved_path
-    dataset_profile.modality = "tabular"
+    dataset_profile.modality = detected_modality if detected_modality in {"text", "image"} else "tabular"
     dataset_profile.col_count = len(sample.columns)
     dataset_profile.columns = [str(col) for col in sample.columns]
 
@@ -726,12 +905,13 @@ def dataset_validation_node(state: AgentState) -> dict:
             "status": "ok",
             "kind": "tabular_csv",
             "resolved_path": resolved_path,
-            "detected_modality": "tabular",
+            "detected_modality": dataset_profile.modality,
             "detected_format": suffix.lstrip("."),
             "column_count": len(sample.columns),
             "sample_row_count": len(sample),
         },
         "dataset_acquisition_error": None,
+        "modality": dataset_profile.modality,
     }
 
 
@@ -821,6 +1001,9 @@ def eda_analyzer_node(state: AgentState) -> dict:
 
     # ── Step 4: Numerical Distributions ────────────────────────────────────
     numeric_cols = df_sample.select_dtypes(include=[np.number]).columns.tolist()
+    profile_modality = (state.get("dataset_profile") or {}).get("modality", "tabular")
+    if len(numeric_cols) > 50:
+        numeric_cols = numeric_cols[:50]
     _eda_emit(session_id, "dist", "Computing Distributions", status="running",
               detail=f"Histograms for {len(numeric_cols)} numeric columns …", pct=32)
     distributions = {}
@@ -898,6 +1081,7 @@ def eda_analyzer_node(state: AgentState) -> dict:
     summary_stats = df_sample.describe().to_string()
     narration_prompt = f"""
         You are an AI Data Scientist. Analyze this dataset for the task: {state['user_query']}
+        Dataset modality: {profile_modality} (text/image may be TF-IDF or flattened-pixel proxies).
 
         Summary Stats:
         {summary_stats[:2000]}
@@ -980,48 +1164,45 @@ def execution_choice_node(state: AgentState) -> dict:
 # 6a. HPT Node
 # ─────────────────────────────────────────────
 def hpt_node(state: AgentState) -> dict:
-    """Derive HPT search space from graph architecture."""
+    """Derive HPT search space; sklearn default, PyTorch when training_path is pytorch."""
+    from anomallm.config import resolve_training_path
+    from anomallm.graph_compile import describe_architecture_layers
+    from anomallm.hpo import pytorch_search_space, tabular_search_space
+
     final_graph = state.get("graph_architecture_json", {})
     nodes = final_graph.get("nodes", [])
-    
-    space = {
-        "learning_rate": ("float_log", 1e-5, 1e-2),
-        "batch_size":    ("categorical", [16, 32, 64, 128]),
-        "optimizer":     ("categorical", ["adam", "sgd", "rmsprop"])
-    }
-    
-    parts = []
-    for node in sorted(nodes, key=lambda n: n.get("position", {}).get("y", 0)):
-        t = node.get("data", {}).get("nodeType", "Dense")
-        nid = node.get("id", "")
-        p = node.get("data", {}).get("params", {})
-        
-        if t == "Dense":
-            space[f"units_{nid}"] = ("categorical", [32,64,128,256,512])
-            space[f"activation_{nid}"] = ("categorical", ["relu","tanh","selu"])
-            parts.append(f"Dense({p.get('units','?')},{p.get('activation','relu')})")
-        elif t == "Dropout":
-            space[f"rate_{nid}"] = ("float", 0.1, 0.6)
-            parts.append(f"Dropout({p.get('rate','?')})")
-        elif t == "LSTM":
-            space[f"lstm_units_{nid}"] = ("categorical", [32,64,128,256])
-            space[f"lstm_return_seq_{nid}"] = ("categorical", [True, False])
-            parts.append(f"LSTM({p.get('units','?')})")
-        elif t == "Conv1D":
-            space[f"filters_{nid}"] = ("categorical", [16,32,64,128])
-            space[f"kernel_{nid}"] = ("categorical", [3, 5, 7])
-            parts.append(f"Conv1D")
-        elif t == "BatchNorm1d":
-            space[f"bn_momentum_{nid}"] = ("float", 0.01, 0.5)
-            parts.append("BN1d")
-        elif t == "Output":
-            parts.append(f"Output({p.get('units','?')},{p.get('activation','sigmoid')})")
+    modality = state.get("modality", "tabular")
+    training_config = state.get("training_config") or {}
+    arch_desc = describe_architecture_layers(nodes)
+
+    if resolve_training_path(state) == "pytorch":
+        space = pytorch_search_space(nodes, training_config)
+        return {
+            "hpt_search_space": space,
+            "final_graph": final_graph,
+            "architecture_desc": arch_desc or "pytorch_mlp",
+        }
+
+    if modality in {"tabular", "text", "image"}:
+        space = tabular_search_space("classification")
+        space["note"] = (
+            f"Path B: sklearn grid on featurized {modality} CSV; visual graph is design-only."
+        )
+    else:
+        from anomallm.hpo import deep_learning_search_space
+
+        space = deep_learning_search_space(nodes)
 
     return {
         "hpt_search_space": space,
         "final_graph": final_graph,
-        "architecture_desc": " → ".join(parts)
+        "architecture_desc": arch_desc if arch_desc else "tabular_baseline",
     }
+
+
+def hitl_hpt_pause_node(state: AgentState) -> dict:
+    """UI-managed pause: user approves HPT params before engineer codegen."""
+    return {}
 
 def _validate_and_fix_syntax(code: str, llm, max_attempts: int = 3) -> str:
     """AST-parse script; if SyntaxError detected, ask Groq to fix ONLY the syntax."""
@@ -1084,72 +1265,10 @@ def _validate_code_contract(script: str) -> dict:
 # 6b. Engineer Agent — DETERMINISTIC TEMPLATE
 # ─────────────────────────────────────────────
 def _build_model_class(graph_nodes):
-    """Build a PyTorch nn.Module class from the visual graph nodes."""
-    sorted_nodes = sorted(graph_nodes, key=lambda n: n.get("position", {}).get("y", 0))
+    """Backward-compatible wrapper; prefer anomallm.graph_compile.build_mlp_layers."""
+    from anomallm.graph_compile import build_mlp_layers
 
-    init_lines = []
-    forward_lines = []
-    layer_idx = 0
-    prev_dim = "input_dim"
-
-    for node in sorted_nodes:
-        d = node.get("data", {})
-        ntype = d.get("nodeType", "")
-        params = d.get("params", {})
-
-        if ntype == "Input":
-            continue  # input_dim handled externally
-        elif ntype == "Dense":
-            units = params.get("units", 128)
-            act   = params.get("activation", "relu")
-            init_lines.append(f"        self.fc{layer_idx} = nn.Linear({prev_dim}, {units})")
-            if act == "relu":
-                init_lines.append(f"        self.act{layer_idx} = nn.ReLU()")
-            elif act == "tanh":
-                init_lines.append(f"        self.act{layer_idx} = nn.Tanh()")
-            elif act == "selu":
-                init_lines.append(f"        self.act{layer_idx} = nn.SELU()")
-            else:
-                init_lines.append(f"        self.act{layer_idx} = nn.ReLU()")
-            forward_lines.append(f"        x = self.fc{layer_idx}(x)")
-            forward_lines.append(f"        x = self.act{layer_idx}(x)")
-            prev_dim = str(units)
-            layer_idx += 1
-        elif ntype == "BatchNorm1d":
-            init_lines.append(f"        self.bn{layer_idx} = nn.BatchNorm1d({prev_dim})")
-            forward_lines.append(f"        x = self.bn{layer_idx}(x)")
-            layer_idx += 1
-        elif ntype == "Dropout":
-            rate = params.get("rate", 0.3)
-            init_lines.append(f"        self.drop{layer_idx} = nn.Dropout({rate})")
-            forward_lines.append(f"        x = self.drop{layer_idx}(x)")
-            layer_idx += 1
-        elif ntype == "Output":
-            # Always use num_classes for CrossEntropyLoss compatibility
-            init_lines.append(f"        self.output_layer = nn.Linear({prev_dim}, num_classes)")
-            forward_lines.append(f"        x = self.output_layer(x)")
-            prev_dim = "num_classes"
-
-    if not init_lines:
-        # Fallback: simple 2-layer net
-        init_lines = [
-            "        self.fc0 = nn.Linear(input_dim, 128)",
-            "        self.act0 = nn.ReLU()",
-            "        self.drop0 = nn.Dropout(0.3)",
-            "        self.fc1 = nn.Linear(128, 64)",
-            "        self.act1 = nn.ReLU()",
-            "        self.output_layer = nn.Linear(64, num_classes)",
-        ]
-        forward_lines = [
-            "        x = self.fc0(x)",
-            "        x = self.act0(x)",
-            "        x = self.drop0(x)",
-            "        x = self.fc1(x)",
-            "        x = self.act1(x)",
-            "        x = self.output_layer(x)",
-        ]
-
-    return "\n".join(init_lines), "\n".join(forward_lines)
+    return build_mlp_layers(graph_nodes)
 
 
 def engineer_node(state: AgentState) -> dict:
@@ -1186,9 +1305,38 @@ async def execution_sandbox_node(state: AgentState) -> dict:
     import tempfile
     global hpt_state, training_state
     
+    # Reset live console state for a clean run-scoped view
+    training_state.update(
+        {
+            "current_epoch": 0,
+            "metrics": [],
+            "best_params": {},
+            "groq_commentary": "",
+            "logs": [],
+            "evaluation_protocol": {},
+            "status": "running",
+        }
+    )
+
     # Dynamically update total epochs display for frontend
     tc = state.get("training_config") or {}
     training_state["total_epochs"] = int(tc.get("epochs", 50))
+    training_state["architecture"] = state.get("architecture_desc") or state.get("architecture") or "Unknown"
+    training_state["optimizer"] = str(tc.get("optimizer") or "adam")
+    hpt_space = state.get("hpt_search_space") or {}
+    candidate_count = len(hpt_space.get("candidates") or [])
+    training_state["search_strategy"] = (
+        f"{hpt_space.get('strategy', 'grid')} ({candidate_count} candidates)"
+        if candidate_count
+        else str(hpt_space.get("strategy") or "grid")
+    )
+    from anomallm.evaluation_report import search_space_table_rows
+
+    training_state["search_space_table"] = [
+        {"parameter": param, "search_range": rng}
+        for param, rng in search_space_table_rows(hpt_space, tc)
+    ]
+    training_state["status"] = "running"
     
     import ast
     script = state.get("generated_code", "") or state.get("groq_fixed_code", "")
@@ -1341,24 +1489,63 @@ async def execution_sandbox_node(state: AgentState) -> dict:
         "onnx": os.path.join(paths.exports, "model.onnx"),
         "meta": os.path.join(paths.exports, "model_meta.json"),
     }
+    feature_importance_path = os.path.join(paths.plots, "feature_importance.png")
+    shap_summary_path = os.path.join(paths.plots, "shap_summary.png")
     training_artifacts.plots = {
         "loss_curve": os.path.join(paths.plots, "loss_curve.png"),
         "feature_correlation": os.path.join(paths.plots, "telemetry_distribution.png"),
-        "shap_importance": os.path.join(paths.plots, "shap_importance.png"),
+        "feature_importance": feature_importance_path,
+        "shap_importance": feature_importance_path,
+        "shap_summary": shap_summary_path,
     }
+    hpt_updates: dict = {}
+    evaluation_payload: dict = {}
     if os.path.exists(training_artifacts.evaluation_path):
         try:
             with open(training_artifacts.evaluation_path, "r", encoding="utf-8") as handle:
                 evaluation_payload = json.load(handle)
+            from anomallm.hpo import parse_hpt_from_evaluation
+
+            hpt_updates = parse_hpt_from_evaluation(evaluation_payload)
             training_artifacts.model_card = {
                 "target_column": evaluation_payload.get("target_column"),
                 "feature_names": evaluation_payload.get("feature_columns", []),
                 "top_features": evaluation_payload.get("feature_importance", []),
+                "theta_star": hpt_updates.get("theta_star"),
             }
-            training_artifacts.best_params = state.get("hpt_best_params") or {}
+            training_artifacts.best_params = hpt_updates.get("hpt_best_params") or state.get("hpt_best_params") or {}
             training_artifacts.task_type = evaluation_payload.get("metrics", {}).get("task_type", "unknown")
+            training_artifacts.metrics = evaluation_payload.get("metrics") or artifact_metrics
+            hpt_path = os.path.join(paths.artifacts, "hpt_summary.json")
+            write_json(hpt_path, {**hpt_updates, "search_space": state.get("hpt_search_space")})
+            register_artifact(bundle.run_manifest, "hpt_summary", "hpt", hpt_path)
+            bundle.run_manifest.metadata["theta_star"] = hpt_updates.get("theta_star")
+            bundle.run_manifest.metadata["hpt_best_value"] = hpt_updates.get("hpt_best_value")
         except Exception:
             pass
+    if not hpt_updates:
+        from anomallm.hpo import parse_hpt_from_stdout_lines
+
+        hpt_updates = parse_hpt_from_stdout_lines(stdout_lines if "stdout_lines" in locals() else [])
+    from anomallm.evaluation_report import resolve_evaluation_metrics
+
+    final_metrics = resolve_evaluation_metrics(
+        evaluation_payload,
+        training_artifacts.metrics,
+    )
+    training_state["evaluation_protocol"] = {
+        "accuracy_pct": round(float(final_metrics.get("accuracy", final_metrics.get("val_acc", 0.0))) * 100, 1)
+        if final_metrics.get("accuracy") is not None or final_metrics.get("val_acc") is not None
+        else None,
+        "f1": round(float(final_metrics.get("f1", 0.0)), 3) if final_metrics.get("f1") is not None else None,
+        "epochs_executed": metrics_list[-1]["epoch"] if metrics_list else int(tc.get("epochs", 0)),
+        "epochs_configured": int(tc.get("epochs", 50)),
+        "optimizer": str(tc.get("optimizer") or "adam"),
+        "architecture": training_state.get("architecture") or "Unknown",
+        "search_strategy": training_state.get("search_strategy") or "",
+        "best_params": training_artifacts.best_params or hpt_updates.get("hpt_best_params") or {},
+    }
+    training_state["status"] = "complete" if metrics_list or final_metrics else "error"
     register_artifact(bundle.run_manifest, "training_log", "log", logs_path)
     return {
         "generated_code": script,
@@ -1368,6 +1555,10 @@ async def execution_sandbox_node(state: AgentState) -> dict:
         "code_validation_result": _validate_code_contract(script),
         "training_logs": logs,
         "metrics": metrics_list,
+        "hpt_best_params": hpt_updates.get("hpt_best_params", state.get("hpt_best_params")),
+        "hpt_best_value": hpt_updates.get("hpt_best_value", state.get("hpt_best_value")),
+        "hpt_trials": hpt_updates.get("hpt_trials", state.get("hpt_trials")),
+        "theta_star": hpt_updates.get("theta_star", state.get("theta_star")),
         "execution_validation_result": {
             "status": "ok" if metrics_list else "failed",
             "message": (
@@ -1895,15 +2086,36 @@ def evaluator_node(state: AgentState) -> dict:
             pdf.image("loss_curve.png", w=160)
             y_pos = pdf.get_y() + 10
 
-        if os.path.exists("shap_importance.png"):
+        if os.path.exists("feature_importance.png"):
             if y_pos > 180:
                 pdf.add_page()
                 y_pos = pdf.get_y()
             else:
                 pdf.set_y(y_pos)
             pdf.set_font('helvetica', 'B', 12)
-            pdf.safe_cell(0, 10, "4. SHAP Feature Importance", ln=1)
+            pdf.safe_cell(0, 10, "4. Model Feature Importance", ln=1)
+            pdf.image("feature_importance.png", w=160)
+            y_pos = pdf.get_y() + 10
+        elif os.path.exists("shap_importance.png"):
+            if y_pos > 180:
+                pdf.add_page()
+                y_pos = pdf.get_y()
+            else:
+                pdf.set_y(y_pos)
+            pdf.set_font('helvetica', 'B', 12)
+            pdf.safe_cell(0, 10, "4. Model Feature Importance (legacy path)", ln=1)
             pdf.image("shap_importance.png", w=160)
+            y_pos = pdf.get_y() + 10
+
+        if os.path.exists("shap_summary.png"):
+            if y_pos > 180:
+                pdf.add_page()
+                y_pos = pdf.get_y()
+            else:
+                pdf.set_y(y_pos)
+            pdf.set_font('helvetica', 'B', 12)
+            pdf.safe_cell(0, 10, "5. SHAP Global Summary", ln=1)
+            pdf.image("shap_summary.png", w=160)
             y_pos = pdf.get_y() + 10
 
         if os.path.exists("confusion_matrix.png"):
@@ -1953,6 +2165,19 @@ def check_execution_validation_status(state: AgentState) -> str:
     if state.get("retry_count", 0) >= MAX_CODEGEN_RETRIES:
         return "execution_failure"
     return "debugger"
+
+
+def check_post_training_route(state: AgentState) -> str:
+    from anomallm.config import get_settings
+
+    validation = state.get("execution_validation_result") or {}
+    if validation.get("status") != "ok":
+        if state.get("retry_count", 0) >= MAX_CODEGEN_RETRIES:
+            return "execution_failure"
+        return "debugger"
+    if get_settings().enable_xai:
+        return "xai_node"
+    return "arxiv_comparator"
 
 
 def check_codegen_validation_status(state: AgentState) -> str:
@@ -2140,22 +2365,38 @@ def save_run_history_node(state: AgentState) -> dict:
 
 def evaluator_node(state: AgentState) -> dict:
     """Assemble the primary markdown report from deterministic evidence artifacts."""
+    from anomallm.evaluation_report import render_evaluation_sections, resolve_evaluation_metrics
+
     bundle = load_or_create_bundle(state)
     bundle.dataset_profile = DatasetProfile.model_validate(state.get("dataset_profile") or {})
     bundle.training_artifacts = TrainingArtifacts.model_validate(state.get("training_artifacts") or {})
+    evaluation_payload = {}
+    if bundle.training_artifacts.evaluation_path and os.path.exists(bundle.training_artifacts.evaluation_path):
+        try:
+            with open(bundle.training_artifacts.evaluation_path, "r", encoding="utf-8") as handle:
+                evaluation_payload = json.load(handle)
+        except Exception:
+            evaluation_payload = {}
+    metrics = resolve_evaluation_metrics(evaluation_payload, bundle.training_artifacts.metrics)
+    architecture = state.get("architecture_desc") or state.get("architecture") or "N/A"
+    evaluation_sections = render_evaluation_sections(
+        metrics=metrics,
+        architecture=architecture,
+        training_config=bundle.training_artifacts.training_config or state.get("training_config") or {},
+        hpt_search_space=state.get("hpt_search_space") or {},
+        epoch_metrics=state.get("metrics") or [],
+        best_params=bundle.training_artifacts.best_params or state.get("hpt_best_params") or {},
+    )
     report_lines = [
         "# OmniML Autonomous ML Run Report",
         "",
         "## Architecture Selection",
         "",
         f"- User query: {state.get('user_query', '')}",
-        f"- Architecture: {state.get('architecture_desc') or state.get('architecture', 'N/A')}",
+        f"- Architecture: {architecture}",
         f"- Dataset: {state.get('selected_dataset', 'N/A')}",
         "",
-        "## Training Summary",
-        "",
-        f"- Metrics: {json.dumps(bundle.training_artifacts.metrics, indent=2) if bundle.training_artifacts.metrics else 'No metrics recorded.'}",
-        f"- Best params: {json.dumps(bundle.training_artifacts.best_params, indent=2) if bundle.training_artifacts.best_params else 'No HPT params recorded.'}",
+        evaluation_sections,
         "",
         "## Explainability",
         "",
@@ -2296,6 +2537,7 @@ def build_graph() -> StateGraph:
         "hitl_pause",
         "hitl_eda_pause",
         "hitl_drift_approval",
+        "hitl_hpt_pause",
         "execution_choice",
     ]
     
@@ -2332,6 +2574,9 @@ def build_graph() -> StateGraph:
     graph.add_node("compliance_renderer", compliance_renderer_node)
     
     # Tier 2 Nodes
+    graph.add_node("task_abstraction",   task_abstraction_node)
+    graph.add_node("modality_prepare",   modality_prepare_node)
+    graph.add_node("hitl_hpt_pause",     hitl_hpt_pause_node)
     graph.add_node("run_history",        run_history_node)
     graph.add_node("drift_sentry",       drift_sentry_node)
     graph.add_node("hitl_drift_approval", hitl_drift_approval_node)
@@ -2340,7 +2585,8 @@ def build_graph() -> StateGraph:
 
     # ── Flow ──
     graph.set_entry_point("run_history")
-    graph.add_edge("run_history",        "architect")
+    graph.add_edge("run_history",        "task_abstraction")
+    graph.add_edge("task_abstraction",   "architect")
     graph.add_edge("architect",          "hitl_model_pause")
     graph.add_edge("hitl_model_pause",   "kaggle_sourcer")
     graph.add_edge("kaggle_sourcer",     "dataset_ranker")
@@ -2357,12 +2603,18 @@ def build_graph() -> StateGraph:
     graph.add_conditional_edges("drift_sentry", check_drift_condition, {"hitl_drift_approval": "hitl_drift_approval", "modality": "modality"})
     graph.add_edge("hitl_drift_approval", "modality")
     
-    graph.add_edge("modality",           "eda_analyzer")
+    graph.add_conditional_edges(
+        "modality",
+        route_after_modality,
+        {"eda_analyzer": "eda_analyzer", "modality_prepare": "modality_prepare"},
+    )
+    graph.add_edge("modality_prepare",   "eda_analyzer")
     graph.add_edge("eda_analyzer",       "imbalance")
     graph.add_edge("imbalance",          "hitl_eda_pause")
     graph.add_edge("hitl_eda_pause",     "execution_choice")
     graph.add_edge("execution_choice",   "hpt")
-    graph.add_edge("hpt",                "engineer")
+    graph.add_edge("hpt",                "hitl_hpt_pause")
+    graph.add_edge("hitl_hpt_pause",     "engineer")
     
     graph.add_conditional_edges(
         "engineer",
@@ -2384,8 +2636,13 @@ def build_graph() -> StateGraph:
     )
     graph.add_conditional_edges(
         "execution_output_validator",
-        check_execution_validation_status,
-        {"debugger": "debugger", "continue": "xai_node", "execution_failure": "execution_failure"}
+        check_post_training_route,
+        {
+            "debugger": "debugger",
+            "xai_node": "xai_node",
+            "arxiv_comparator": "arxiv_comparator",
+            "execution_failure": "execution_failure",
+        },
     )
     graph.add_edge("debugger",           "codegen_contract_validator")
     graph.add_edge("xai_node",           "arxiv_comparator")

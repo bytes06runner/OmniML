@@ -105,6 +105,33 @@
             background: #0a0a0f;
             line-height: 1.5;
         }
+        .eval-panel {
+            padding: 15px 20px;
+            border-bottom: 1px solid #30363d;
+            display: none;
+        }
+        .eval-panel.visible { display: block; }
+        .eval-grid {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 8px 16px;
+            font-size: 13px;
+            margin-bottom: 12px;
+        }
+        .eval-label { color: #8b949e; }
+        .eval-value { color: #e6edf3; }
+        .eval-value.highlight { color: #10b981; font-weight: bold; }
+        .search-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 12px;
+        }
+        .search-table th, .search-table td {
+            text-align: left;
+            padding: 6px;
+            border-bottom: 1px solid #21262d;
+        }
+        .search-table th { color: #8b949e; }
     </style>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
@@ -144,6 +171,18 @@
         <div class="groq-commentary">
             <div class="groq-title">🧠 GROQ LIVE OBSERVATION</div>
             <div id="groq-text">Awaiting initial epochs for analysis...</div>
+        </div>
+
+        <div class="eval-panel" id="eval-panel">
+            <div class="section-title" style="padding-left:0;">Evaluation Protocol</div>
+            <div class="eval-grid" id="eval-grid"></div>
+            <div class="section-title" style="padding-left:0;">Hyperparameter Search Space</div>
+            <table class="search-table">
+                <thead>
+                    <tr><th>Parameter</th><th>Search Range</th></tr>
+                </thead>
+                <tbody id="search-space-body"></tbody>
+            </table>
         </div>
 
         <div class="section-title">SUBPROCESS LOG</div>
@@ -297,11 +336,43 @@
             if (state.best_params && Object.keys(state.best_params).length > 0) {
                 const bpStrings = Object.entries(state.best_params).map(([k,v]) => `${k}=${typeof v === 'number' ? v.toFixed(4).replace(/\.0000$/, '') : v}`);
                 document.getElementById('best-params-desc').innerText = `Config: ${bpStrings.join(', ')}`;
+            } else if (state.optimizer) {
+                document.getElementById('best-params-desc').innerText = `Optimizer: ${state.optimizer} | Search: ${state.search_strategy || 'grid'}`;
             }
 
             if (state.groq_commentary) {
                 document.getElementById('groq-text').innerText = state.groq_commentary;
             }
+        }
+
+        function updateEvaluationPanel(state) {
+            const panel = document.getElementById('eval-panel');
+            const protocol = state.evaluation_protocol || {};
+            const hasResults = state.status === 'complete' && (
+                protocol.accuracy_pct != null || protocol.f1 != null
+            );
+            if (!hasResults) {
+                panel.classList.remove('visible');
+                return;
+            }
+            panel.classList.add('visible');
+            const rows = [
+                ['Accuracy', protocol.accuracy_pct != null ? `${protocol.accuracy_pct}%` : '-', true],
+                ['F1', protocol.f1 != null ? protocol.f1.toFixed(3) : '-', true],
+                ['Epochs', `${protocol.epochs_executed || 0} / ${protocol.epochs_configured || 0}`, false],
+                ['Optimizer', protocol.optimizer || state.optimizer || '-', false],
+                ['Architecture', protocol.architecture || state.architecture || '-', false],
+                ['Search Strategy', protocol.search_strategy || state.search_strategy || '-', false],
+            ];
+            document.getElementById('eval-grid').innerHTML = rows.map(([label, value, highlight]) => `
+                <div class="eval-label">${label}</div>
+                <div class="eval-value ${highlight ? 'highlight' : ''}">${value}</div>
+            `).join('');
+
+            const tableRows = (state.search_space_table || []).map(row => `
+                <tr><td>${row.parameter}</td><td>${row.search_range}</td></tr>
+            `).join('');
+            document.getElementById('search-space-body').innerHTML = tableRows || '<tr><td colspan="2">No search space recorded.</td></tr>';
         }
 
         function updateLog(logs) {
@@ -323,6 +394,7 @@
                 updateCharts(data.metrics || []);
                 updateTable(data.metrics || []);
                 updateHeader(data);
+                updateEvaluationPanel(data);
                 updateLog(data.logs || []);
                 if (data.status === 'complete' || 
                     data.status === 'error') {

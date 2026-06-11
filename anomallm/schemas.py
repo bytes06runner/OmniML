@@ -72,6 +72,9 @@ class XAIArtifacts(BaseModel):
     explanation_method: str = "heuristic"
     narrative: str = ""
     top_features: List[Dict[str, Any]] = Field(default_factory=list)
+    global_shap: Dict[str, Any] = Field(default_factory=dict)
+    local_lime: List[Dict[str, Any]] = Field(default_factory=list)
+    plot_paths: Dict[str, str] = Field(default_factory=dict)
     limitations: List[str] = Field(default_factory=list)
     evidence: Dict[str, Any] = Field(default_factory=dict)
 

@@ -1,0 +1,7 @@
+# Table II — Comparative Performance
+
+| dataset | framework | accuracy | macro_f1 | auc_roc | status |
+| --- | --- | --- | --- | --- | --- |
+| UCI Breast Cancer | omniml | 96.3 ± 0.7 | 0.960 ± 0.008 | 0.991 ± 0.007 | ok |
+| UCI Breast Cancer | sklearn_rf | 96.3 ± 0.7 | 0.960 ± 0.008 | 0.991 ± 0.007 | ok |
+| UCI Breast Cancer | sklearn_logreg | 95.1 ± 2.5 | 0.948 ± 0.027 | 0.992 ± 0.005 | ok |

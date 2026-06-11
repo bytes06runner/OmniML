@@ -80,10 +80,13 @@ def load_or_create_bundle(state: Dict[str, Any]) -> EvidenceBundle:
     else:
         run_id = state.get("run_id") or state.get("problem_id") or f"run_{datetime.utcnow().strftime('%Y%m%d%H%M%S')}"
         manifest = create_run_manifest(run_id, state.get("user_query", ""), state.get("problem_id", run_id))
+    from .schemas import XAIArtifacts
+
     return EvidenceBundle(
         run_manifest=manifest,
         dataset_profile=DatasetProfile.model_validate(state.get("dataset_profile") or {}),
         training_artifacts=TrainingArtifacts.model_validate(state.get("training_artifacts") or {}),
+        xai_artifacts=XAIArtifacts.model_validate(state.get("xai_artifacts") or {}),
     )
 
 

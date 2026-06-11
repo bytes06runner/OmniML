@@ -1,0 +1,30 @@
+{
+  "run_id": "test_run",
+  "user_query": "Diagnose breast cancer from biopsy",
+  "problem_id": "test_run",
+  "status": "running",
+  "evidence_version": "1.0",
+  "created_at": "2026-06-04T17:48:13.116117",
+  "updated_at": "2026-06-04T17:48:13.116117",
+  "paths": {
+    "root": "C:\\Users\\mukhe\\Downloads\\OmniML\\runs\\test_run",
+    "artifacts": "C:\\Users\\mukhe\\Downloads\\OmniML\\runs\\test_run\\artifacts",
+    "plots": "C:\\Users\\mukhe\\Downloads\\OmniML\\runs\\test_run\\plots",
+    "reports": "C:\\Users\\mukhe\\Downloads\\OmniML\\runs\\test_run\\reports",
+    "exports": "C:\\Users\\mukhe\\Downloads\\OmniML\\runs\\test_run\\exports",
+    "logs": "C:\\Users\\mukhe\\Downloads\\OmniML\\runs\\test_run\\logs"
+  },
+  "artifact_refs": [],
+  "metadata": {
+    "task_representation": {
+      "modality": "tabular",
+      "objective": "classification",
+      "constraints": [
+        "human_in_the_loop",
+        "evidence_backed_reporting"
+      ],
+      "risk_level": "high",
+      "raw_prompt": "Diagnose breast cancer from biopsy"
+    }
+  }
+}

@@ -1,0 +1,3 @@
+from experiments.datasets.breast_cancer import load_breast_cancer_frame
+
+load_uci_breast_cancer_frame = load_breast_cancer_frame
