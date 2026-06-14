@@ -2,7 +2,7 @@
   <img src="public/logo.png" alt="OmniML Logo" width="120" />
 </p>
 
-<h1 align="center">OmniML - Autonomous HITL Auto-ML Pipeline</h1>
+<h1 align="center">OmniML - Autonomous HITL Auto-ML Pipeline , built by Ayushman & Srijeet</h1>
 
 <p align="center">
   <strong>Describe a problem. Review the architecture. Pick the dataset. Launch training. Download the reports.</strong>
