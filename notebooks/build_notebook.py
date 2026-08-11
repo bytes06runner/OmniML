@@ -1283,6 +1283,32 @@ def train_text(state):
         "y_true": np.asarray(ds["y_val"]), "y_pred": pred, "y_score": score}
 
 
+def fit_text_batch_size(requested):
+    """Cap the transformer batch size to the available VRAM.
+
+    DistilBERT at 256 tokens needs roughly 2.5-3 GB at batch 32. Consumer 4-6 GB cards
+    will out-of-memory partway through an epoch, which is an expensive way to find out,
+    so the batch is reduced up front and the reduction is reported.
+    """
+    if DEVICE != "cuda":
+        return min(requested, 8)
+    try:
+        gb = torch.cuda.get_device_properties(0).total_memory / 1e9
+    except Exception:
+        return requested
+    if gb >= 14:
+        capped = requested
+    elif gb >= 8:
+        capped = min(requested, 16)
+    elif gb >= 5:
+        capped = min(requested, 8)
+    else:
+        capped = min(requested, 4)
+    if capped != requested:
+        print(f"    {gb:.1f} GB VRAM: batch size {requested} -> {capped} to avoid OOM")
+    return capped
+
+
 def _train_text_lora(state):
     """DistilBERT + LoRA, matching the paper's parameter-efficient fine-tuning protocol."""
     from torch.utils.data import DataLoader, Dataset as TorchDataset
@@ -1317,9 +1343,10 @@ def _train_text_lora(state):
         def __getitem__(self, i):
             return ({k: v[i] for k, v in self.enc.items()}, self.labels[i])
 
-    bs = int(state["theta_star"]["params"].get("batch_size", 32))
+    bs = fit_text_batch_size(int(state["theta_star"]["params"].get("batch_size", 32)))
+    eval_bs = max(bs, 8)
     tl = DataLoader(TxtDS(ds["texts_train"], ds["y_train"]), batch_size=bs, shuffle=True)
-    vl = DataLoader(TxtDS(ds["texts_val"], ds["y_val"]), batch_size=64)
+    vl = DataLoader(TxtDS(ds["texts_val"], ds["y_val"]), batch_size=eval_bs)
 
     # LoRA adapters are fine-tuned at 2e-4; the Path A grid's 1e-3/1e-2 range is
     # calibrated for training from scratch, not for adapter updates on a pretrained
@@ -2125,7 +2152,18 @@ def run_h2o_fold(X_train, y_train, X_val, y_val):
         import h2o
         from h2o.automl import H2OAutoML
         if not _H2O_STARTED:
-            h2o.init(strict_version_check=False, verbose=False)
+            # H2O sizes its JVM heap from total RAM and will crowd out the training
+            # process on an 8 GB machine, so it is capped when memory is limited.
+            init_kwargs = {"strict_version_check": False, "verbose": False}
+            try:
+                import psutil
+                total_gb = psutil.virtual_memory().total / 1e9
+                if total_gb < 12:
+                    init_kwargs["max_mem_size"] = "3G"
+                    print(f"    {total_gb:.0f} GB RAM: capping the H2O heap at 3G")
+            except Exception:
+                pass
+            h2o.init(**init_kwargs)
             h2o.no_progress()
             _H2O_STARTED = True
 
