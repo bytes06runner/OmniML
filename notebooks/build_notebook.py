@@ -90,6 +90,9 @@ The notebook has two modes, set in the configuration cell directly below:
 | **Smoke** (default) | `False` | ~5 min, CPU is fine | Full orchestration, real 5-fold CV on the tabular benchmark, reduced text/image budgets. Verifies every code path. |
 | **Full reproduction** | `True` | ~60–75 min on a T4 | Everything above plus DistilBERT+LoRA on the real IMDB corpus, a CNN trained to convergence on full CIFAR-10, and the AutoKeras / H2O AutoML baselines. |
 
+Both figures are compute time. On a fresh runtime, add a few minutes for package installs and
+the first download of the IMDB and CIFAR-10 corpora; both are cached for the rest of the session.
+
 A `GROQ_API_KEY` is **optional**. With a key, the reasoning agents (task abstraction, architecture
 synthesis, EDA narration, compliance narrative) run as real LLM calls exactly as in the deployed
 system. Without one, the notebook falls back to deterministic agent implementations so that it
@@ -316,7 +319,9 @@ BUDGET = {
 _est = 5 if not FULL_RUN else (
     10 + BUDGET["image_repeats"] * 10 + BUDGET["text_repeats"] * 8
 )
-print(f"Estimated total runtime: ~{_est} minutes")
+print(f"Estimated compute time: ~{_est} minutes")
+print("Add 2-5 minutes on a fresh runtime for package installs and the first download of")
+print("the IMDB and CIFAR-10 corpora. Both are cached for the rest of the session.")
 print()
 for k, v in BUDGET.items():
     print(f"  {k:24s} {v}")
@@ -2343,31 +2348,77 @@ therefore measured on this run rather than assumed.
 ''')
 
 code(r'''
-def load_cifar10(train_size):
-    """Real CIFAR-10 via torchvision, with augmentation on the training partition."""
-    import torchvision
-    from torchvision import transforms
-    from torch.utils.data import Subset
+CIFAR_MEAN, CIFAR_STD = (0.4914, 0.4822, 0.4465), (0.2470, 0.2435, 0.2616)
 
-    mean, std = (0.4914, 0.4822, 0.4465), (0.2470, 0.2435, 0.2616)
+
+def _cifar_transforms():
+    from torchvision import transforms
     train_tf = transforms.Compose([
         transforms.RandomCrop(32, padding=4),
         transforms.RandomHorizontalFlip(),
         transforms.ToTensor(),
-        transforms.Normalize(mean, std),
+        transforms.Normalize(CIFAR_MEAN, CIFAR_STD),
     ])
-    test_tf = transforms.Compose([transforms.ToTensor(), transforms.Normalize(mean, std)])
+    test_tf = transforms.Compose([transforms.ToTensor(),
+                                  transforms.Normalize(CIFAR_MEAN, CIFAR_STD)])
+    return train_tf, test_tf
 
-    root = "./data/cifar10"
-    train = torchvision.datasets.CIFAR10(root, train=True, download=True, transform=train_tf)
-    test = torchvision.datasets.CIFAR10(root, train=False, download=True, transform=test_tf)
 
-    labels = np.array(train.targets)
+class _HFCifarDataset:
+    """Adapts a Hugging Face image split to the torch Dataset protocol."""
+
+    def __init__(self, split, transform):
+        self.split, self.transform = split, transform
+
+    def __len__(self):
+        return len(self.split)
+
+    def __getitem__(self, i):
+        row = self.split[int(i)]
+        return self.transform(row["img"].convert("RGB")), int(row["label"])
+
+
+def load_cifar10(train_size):
+    """Real CIFAR-10 with augmentation on the training partition.
+
+    The canonical torchvision source (www.cs.toronto.edu) is heavily rate limited and can
+    take 30-45 minutes from a Colab worker. The identical dataset is mirrored on the
+    Hugging Face CDN, which is typically two orders of magnitude faster, so that is tried
+    first and torchvision is kept as the fallback.
+    """
+    from torch.utils.data import Subset
+    train_tf, test_tf = _cifar_transforms()
+
+    try:
+        try:
+            from datasets import load_dataset
+        except ImportError:
+            pip_install(["datasets"], "datasets (CIFAR-10 mirror)")
+            from datasets import load_dataset
+
+        d = load_dataset("uoft-cs/cifar10")
+        train = _HFCifarDataset(d["train"], train_tf)
+        test = _HFCifarDataset(d["test"], test_tf)
+        labels, y_test = np.array(d["train"]["label"]), np.array(d["test"]["label"])
+        source = "huggingface:uoft-cs/cifar10"
+    except Exception as exc:
+        print(f"  [warn] CDN mirror unavailable ({type(exc).__name__}); falling back to "
+              f"the torchvision source, which may take 30+ minutes to download.")
+        import torchvision
+        root = "./data/cifar10"
+        train = torchvision.datasets.CIFAR10(root, train=True, download=True,
+                                             transform=train_tf)
+        test = torchvision.datasets.CIFAR10(root, train=False, download=True,
+                                            transform=test_tf)
+        labels, y_test = np.array(train.targets), np.array(test.targets)
+        source = "torchvision:cs.toronto.edu"
+
+    print(f"  source {source}")
     if train_size < len(train):
         idx, _ = train_test_split(np.arange(len(train)), train_size=train_size,
                                   random_state=SEED, stratify=labels)
-        train, labels = Subset(train, idx), labels[idx]
-    return train, test, labels, np.array(test.targets)
+        train, labels = Subset(train, idx.tolist()), labels[idx]
+    return train, test, labels, y_test
 
 
 t0 = time.time()
