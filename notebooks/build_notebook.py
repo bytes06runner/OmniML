@@ -94,6 +94,12 @@ A `GROQ_API_KEY` is **optional**. With a key, the reasoning agents (task abstrac
 synthesis, EDA narration, compliance narrative) run as real LLM calls exactly as in the deployed
 system. Without one, the notebook falls back to deterministic agent implementations so that it
 always runs end to end, and it labels every affected artifact accordingly.
+
+To supply a key safely, use the **Colab secrets vault** rather than the configuration cell: click
+the 🔑 icon in the left sidebar, add a secret named `GROQ_API_KEY`, and grant this notebook
+access. The value is then held in your Google account instead of inside the `.ipynb` file, so it
+cannot be committed or shared by accident. The notebook checks the configuration cell first, then
+the vault, then the environment, and prints which source it used.
 ''')
 
 # ============================================================ 1. SETUP
@@ -115,8 +121,11 @@ EXHAUSTIVE    = False   # True  -> 5 repeats for the text/image experiments inst
 
 RUN_BASELINES = True    # Install and run the real AutoKeras and H2O AutoML baselines
 
-GROQ_API_KEY  = ""      # Optional. Enables the real LLM reasoning agents.
-                        # Leave empty to use the deterministic offline agents.
+GROQ_API_KEY  = ""      # Optional, and best left empty. Store the key in the Colab
+                        # secrets vault instead: click the key icon in the left sidebar,
+                        # add a secret named GROQ_API_KEY, and enable notebook access.
+                        # A key pasted here is saved inside the .ipynb file and will leak
+                        # if the notebook is ever committed or shared.
 
 SEED          = 42      # Global seed. Matches the paper's reproducibility protocol.
 N_FOLDS       = 5       # Cross-validation folds for the tabular benchmark.
@@ -401,6 +410,29 @@ ambiguous about their provenance.
 ''')
 
 code(r'''
+def resolve_groq_key(explicit=""):
+    """Locate the Groq credential without requiring it to be written into the notebook.
+
+    Order of preference: the configuration cell, then the Colab secrets vault (the key
+    icon in the left sidebar), then the environment. The vault is preferred because its
+    value is held in your Google account rather than inside the .ipynb file, so it cannot
+    be committed or shared by accident.
+    """
+    if explicit and explicit.strip():
+        return explicit.strip(), "notebook configuration cell"
+    try:
+        from google.colab import userdata
+        value = userdata.get("GROQ_API_KEY")
+        if value and value.strip():
+            return value.strip(), "Colab secrets vault"
+    except Exception:
+        pass                      # secret absent, access not granted, or not on Colab
+    value = os.environ.get("GROQ_API_KEY", "")
+    if value.strip():
+        return value.strip(), "GROQ_API_KEY environment variable"
+    return "", "not supplied"
+
+
 class ReasoningBackend:
     """Groq-backed reasoning with a deterministic offline fallback."""
 
@@ -408,7 +440,7 @@ class ReasoningBackend:
     ENDPOINT = "https://api.groq.com/openai/v1/chat/completions"
 
     def __init__(self, api_key=""):
-        self.api_key = (api_key or os.environ.get("GROQ_API_KEY") or "").strip()
+        self.api_key, self.key_source = resolve_groq_key(api_key)
         self.available = False
         self.calls = 0
         self.cache_hits = 0
@@ -481,8 +513,19 @@ def resilient_json_parse(text):
 
 
 LLM = ReasoningBackend(GROQ_API_KEY)
-print("Reasoning backend :", "Groq / " + ReasoningBackend.MODEL if LLM.available
-      else "deterministic offline agents (no GROQ_API_KEY supplied)")
+if LLM.available:
+    print(f"Reasoning backend : Groq / {ReasoningBackend.MODEL}")
+    print(f"Credential source : {LLM.key_source}")
+    if LLM.key_source == "notebook configuration cell":
+        print("\n[security] The key is now stored inside this .ipynb file. Do not use")
+        print("           File > Save a copy in GitHub while it is there. Prefer the")
+        print("           Colab secrets vault: key icon in the left sidebar.")
+else:
+    print("Reasoning backend : deterministic offline agents")
+    print(f"Credential        : {LLM.key_source}")
+    print("\nTo enable the real LLM agents, click the key icon in the left sidebar,")
+    print("add a secret named GROQ_API_KEY, and grant this notebook access. Results")
+    print("produced without a key are labelled as deterministic in the manifest.")
 ''')
 
 md(r'''
@@ -2789,6 +2832,7 @@ MANIFEST = {
     "environment": ENVIRONMENT,
     "reasoning_backend": {"llm_available": LLM.available,
                           "model": ReasoningBackend.MODEL if LLM.available else None,
+                          "credential_source": LLM.key_source,
                           "llm_calls": LLM.calls, "cache_hits": LLM.cache_hits},
     "baseline_status": BASELINE_STATUS,
     "orchestration": {"nodes": [n for n, _ in NODES], "hitl_checkpoints": HITL_NODES,

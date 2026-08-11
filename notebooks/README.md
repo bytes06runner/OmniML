@@ -19,8 +19,23 @@ The first cell is the only one that needs editing:
 | `FULL_RUN` | `False` | `False` runs a ~5 minute verification pass. `True` runs the complete reproduction (~60–75 min on a T4): DistilBERT + LoRA on the real IMDB corpus, a CNN trained to convergence on full CIFAR-10, and the AutoKeras / H2O AutoML baselines. |
 | `EXHAUSTIVE` | `False` | Raises the text and image experiments from 3 seed repeats to 5. |
 | `RUN_BASELINES` | `True` | Installs and runs AutoKeras and H2O AutoML. |
-| `GROQ_API_KEY` | `""` | Optional. With a key the reasoning agents run as real LLM calls; without one they fall back to deterministic implementations and every affected artifact is labelled accordingly. |
+| `GROQ_API_KEY` | `""` | Optional. With a key the reasoning agents run as real LLM calls; without one they fall back to deterministic implementations and every affected artifact is labelled accordingly. Prefer the Colab secrets vault over this cell — see below. |
 | `SEED` | `42` | Global seed. |
+
+## Supplying the Groq key safely
+
+Do **not** paste your key into the configuration cell if there is any chance the notebook gets
+saved back to a repository — the value is stored inside the `.ipynb` file and scrapers find
+committed keys within minutes. Use the Colab secrets vault instead:
+
+1. Click the 🔑 icon in the Colab left sidebar.
+2. **Add new secret**, name it exactly `GROQ_API_KEY`, paste the value.
+3. Toggle **Notebook access** on for this notebook.
+
+Leave `GROQ_API_KEY = ""` in the configuration cell. The notebook resolves the credential from
+the configuration cell, then the vault, then the environment, and prints which source it used.
+That source is also recorded in `reproducibility_manifest.json`, so a reader can always tell
+whether a given run used real LLM agents or the deterministic fallbacks.
 
 ## What it produces
 
