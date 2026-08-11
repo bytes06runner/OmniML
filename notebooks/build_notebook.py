@@ -673,7 +673,8 @@ def _image_architecture(n_classes):
 
 def _text_architecture(n_classes):
     nodes = [
-        {"id": "n1", "nodeType": "Input",   "params": {"encoder": "distilbert-base-uncased"}},
+        {"id": "n1", "nodeType": "Input",
+         "params": {"encoder": "distilbert/distilbert-base-uncased"}},
         {"id": "n2", "nodeType": "Dense",   "params": {"units": 768, "activation": "tanh",
                                                        "adapter": "lora", "r": 8, "alpha": 16}},
         {"id": "n3", "nodeType": "Dropout", "params": {"rate": 0.1}},
@@ -1239,7 +1240,8 @@ def _train_text_lora(state):
     seed = state["config"].get("run_seed", SEED)
     torch.manual_seed(seed)
 
-    name = "distilbert-base-uncased"
+    # Fully-qualified id: recent hub clients reject bare canonical names.
+    name = "distilbert/distilbert-base-uncased"
     tok = AutoTokenizer.from_pretrained(name)
     base = AutoModelForSequenceClassification.from_pretrained(name, num_labels=2)
     model = get_peft_model(base, LoraConfig(
@@ -2167,6 +2169,12 @@ exercised quickly.
 ''')
 
 code(r'''
+# Recent huggingface_hub clients require a fully-qualified 'namespace/name' dataset id.
+# The historical bare alias "imdb" no longer resolves, so the canonical repo is tried first
+# and the bare alias is kept only for older hub versions.
+IMDB_REPOS = ["stanfordnlp/imdb", "imdb"]
+
+
 def load_imdb(n_train, n_test):
     """Load the real IMDB corpus. Returns (texts_train, y_train, texts_test, y_test, source)."""
     try:
@@ -2175,11 +2183,43 @@ def load_imdb(n_train, n_test):
         pip_install(["datasets"], "datasets (IMDB corpus)")
         from datasets import load_dataset
 
-    d = load_dataset("imdb")
-    tr = d["train"].shuffle(seed=SEED).select(range(min(n_train, len(d["train"]))))
-    te = d["test"].shuffle(seed=SEED).select(range(min(n_test, len(d["test"]))))
-    return (list(tr["text"]), np.array(tr["label"]),
-            list(te["text"]), np.array(te["label"]), "huggingface:imdb")
+    errors = []
+    for repo in IMDB_REPOS:
+        try:
+            d = load_dataset(repo)
+            tr = d["train"].shuffle(seed=SEED).select(range(min(n_train, len(d["train"]))))
+            te = d["test"].shuffle(seed=SEED).select(range(min(n_test, len(d["test"]))))
+            return (list(tr["text"]), np.array(tr["label"]),
+                    list(te["text"]), np.array(te["label"]), f"huggingface:{repo}")
+        except Exception as exc:
+            errors.append(f"{repo} -> {type(exc).__name__}: {exc}")
+            print(f"  [warn] '{repo}' did not resolve ({type(exc).__name__}); trying next source")
+
+    print("  [warn] Hugging Face Hub unavailable; using the Keras copy of the same corpus.")
+    return _load_imdb_keras(n_train, n_test, errors)
+
+
+def _load_imdb_keras(n_train, n_test, errors):
+    """Fallback: the identical Maas et al. (2011) corpus, distributed with Keras as word
+    indices. Same reviews and labels, but lowercased and stripped of punctuation, so it is
+    labelled distinctly in the results provenance rather than passed off as the raw text."""
+    try:
+        from tensorflow.keras.datasets import imdb as kimdb
+    except Exception as exc:
+        raise RuntimeError(
+            "Could not obtain the IMDB corpus from any source:\n  "
+            + "\n  ".join(errors) + f"\n  keras -> {exc}") from None
+
+    (xtr, ytr), (xte, yte) = kimdb.load_data(num_words=20_000)
+    index = {v + 3: k for k, v in kimdb.get_word_index().items()}
+    index.update({0: "<pad>", 1: "<start>", 2: "<unk>", 3: "<unused>"})
+
+    def decode(seqs, n):
+        return [" ".join(index.get(i, "<unk>") for i in seq[1:]) for seq in seqs[:n]]
+
+    return (decode(xtr, n_train), np.asarray(ytr[:n_train]),
+            decode(xte, n_test), np.asarray(yte[:n_test]),
+            "keras:imdb (word-index decoded, same Maas et al. corpus)")
 
 
 if BUDGET["text_use_lora"]:
