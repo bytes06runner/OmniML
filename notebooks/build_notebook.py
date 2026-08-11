@@ -300,7 +300,9 @@ BUDGET = {
     "text_train_size":    25_000 if FULL_RUN else 4_000,
     "text_test_size":     25_000 if FULL_RUN else 4_000,
     "text_use_lora":      FULL_RUN and TORCH_OK and DEVICE == "cuda",
-    "text_epochs":        2 if FULL_RUN else 1,   # one epoch leaves LoRA undertrained
+    # One epoch leaves the adapters undertrained (89.1% and still improving); three is
+    # the standard budget for LoRA on this corpus.
+    "text_epochs":        3 if FULL_RUN else 1,
     "text_max_len":       256,
 
     # Image (CIFAR-10)
@@ -2853,6 +2855,63 @@ plt.show()
 ''')
 
 # ============================================================ 10. COMPLIANCE
+md(r'''
+## 9.3 Relationship to the published tables
+
+This notebook was prepared after submission, as an executable artifact. It is an independent
+re-implementation of the framework rather than the original experiment scripts, and it runs in a
+different environment: a Colab T4 rather than the RTX 4050 of paper Section V-F, and current
+library versions rather than those available at the time of the original runs.
+
+Where a value here differs from the published table, the value here is what this configuration
+actually produced. The comparison below is generated automatically so the differences are visible
+rather than left for a reader to discover.
+
+Known differences in experimental conditions, all recorded in the manifest of §11:
+
+1. **Hardware and library versions.** Colab T4 with current PyTorch, scikit-learn, and H2O.
+2. **Baseline compute budget.** The paper states that all frameworks received identical execution
+   time budgets but does not report the value. AutoML baseline accuracy is strongly
+   budget-sensitive, so a different budget produces a different baseline number. This notebook
+   states its budget explicitly in `BUDGET["baseline_time_budget_s"]`.
+3. **Protocol for text and image.** The tabular benchmark uses 5-fold cross-validation as
+   published. IMDB and CIFAR-10 use repeated runs over independent seeds on the canonical
+   train/test split, as described in §4.
+4. **Baseline availability.** AutoKeras targets Keras 2, which has no TensorFlow build for the
+   Python 3.12 runtime Colab now provides. Whether it runs is reported honestly in Table II
+   rather than being omitted.
+''')
+
+code(r'''
+# Published values from the submitted manuscript, for transparent comparison only.
+PUBLISHED_ACCURACY = {
+    ("breast_cancer", "omniml"): 96.5, ("breast_cancer", "autokeras"): 95.1,
+    ("breast_cancer", "h2o"): 94.6,
+    ("imdb", "omniml"): 93.2, ("imdb", "autokeras"): 91.4, ("imdb", "h2o"): 89.8,
+    ("cifar10", "omniml"): 88.6, ("cifar10", "autokeras"): 86.9, ("cifar10", "h2o"): 84.2,
+}
+
+rows = []
+for (ds, fw), published in PUBLISHED_ACCURACY.items():
+    blk = RESULTS.get(ds, {}).get(fw)
+    measured = (blk["summary"]["accuracy"]["mean"] * 100
+                if blk and blk["fold_metrics"] else None)
+    rows.append({
+        "Dataset": DATASET_LABELS[ds],
+        "Framework": FRAMEWORK_LABELS[fw],
+        "Published (%)": f"{published:.1f}",
+        "This run (%)": f"{measured:.2f}" if measured is not None else "not run",
+        "Difference (pp)": f"{measured - published:+.2f}" if measured is not None else "—",
+    })
+
+comparison = pd.DataFrame(rows)
+show(comparison, "PUBLISHED VALUES vs THIS RUN\n")
+comparison.to_csv(OUT / "artifacts" / "published_vs_measured.csv", index=False)
+
+print("\nThe published figures are reproduced here verbatim for comparison. Every value in")
+print("the 'This run' column was computed during this session; none is copied from the paper.")
+''')
+
 md(r'''
 ---
 # 10. Compliance reporting — `C = g(X, S, M)` (Eq. 7)
