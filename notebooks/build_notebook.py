@@ -2026,11 +2026,17 @@ if RUN_BASELINES:
         BASELINE_STATUS["h2o"] = f"unavailable: {type(exc).__name__}: {exc}"[:200]
 
     # ---- AutoKeras ----
+    # AutoKeras targets Keras 2. Under the Keras 3 that ships with current Colab it
+    # builds layers with NumPy integers, which Keras 3 rejects with a confusing
+    # "invalid value for `units`" error even though the value is a valid integer.
+    # tf-keras plus TF_USE_LEGACY_KERAS restores the Keras 2 API it expects. The flag
+    # must be set before TensorFlow is first imported.
+    os.environ["TF_USE_LEGACY_KERAS"] = "1"
     try:
-        pip_install(["autokeras"], "autokeras")
+        pip_install(["tf-keras", "autokeras"], "tf-keras + autokeras")
         import autokeras as ak  # noqa: F401
         AUTOKERAS_OK = True
-        BASELINE_STATUS["autokeras"] = "installed"
+        BASELINE_STATUS["autokeras"] = "installed (Keras 2 compatibility mode)"
     except Exception as exc:
         BASELINE_STATUS["autokeras"] = f"unavailable: {type(exc).__name__}: {exc}"[:200]
 
