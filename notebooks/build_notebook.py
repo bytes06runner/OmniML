@@ -300,15 +300,18 @@ BUDGET = {
     "text_train_size":    25_000 if FULL_RUN else 4_000,
     "text_test_size":     25_000 if FULL_RUN else 4_000,
     "text_use_lora":      FULL_RUN and TORCH_OK and DEVICE == "cuda",
-    "text_epochs":        1,
+    "text_epochs":        2 if FULL_RUN else 1,   # one epoch leaves LoRA undertrained
     "text_max_len":       256,
 
     # Image (CIFAR-10)
     "image_repeats":      (5 if EXHAUSTIVE else 3) if FULL_RUN else 2,
     "image_train_size":   50_000 if FULL_RUN else 6_000,
     "image_epochs":       25 if FULL_RUN else 3,
-    "image_proxy_epochs": 1,        # per candidate during the Path A grid search
-    "image_proxy_size":   6_000,    # subset used for the Path A grid search
+    # A single proxy epoch cannot separate lr=0.001 from lr=0.01: both look similar after
+    # one pass, but 0.01 degrades badly over a full 25-epoch schedule. Three epochs on a
+    # larger subset makes the selection reliable.
+    "image_proxy_epochs": 3,
+    "image_proxy_size":   10_000,
     "image_search":       FULL_RUN, # run the 4-candidate Path A grid
 
     # Baselines
@@ -2026,17 +2029,11 @@ if RUN_BASELINES:
         BASELINE_STATUS["h2o"] = f"unavailable: {type(exc).__name__}: {exc}"[:200]
 
     # ---- AutoKeras ----
-    # AutoKeras targets Keras 2. Under the Keras 3 that ships with current Colab it
-    # builds layers with NumPy integers, which Keras 3 rejects with a confusing
-    # "invalid value for `units`" error even though the value is a valid integer.
-    # tf-keras plus TF_USE_LEGACY_KERAS restores the Keras 2 API it expects. The flag
-    # must be set before TensorFlow is first imported.
-    os.environ["TF_USE_LEGACY_KERAS"] = "1"
     try:
-        pip_install(["tf-keras", "autokeras"], "tf-keras + autokeras")
+        pip_install(["autokeras"], "autokeras")
         import autokeras as ak  # noqa: F401
         AUTOKERAS_OK = True
-        BASELINE_STATUS["autokeras"] = "installed (Keras 2 compatibility mode)"
+        BASELINE_STATUS["autokeras"] = "installed"
     except Exception as exc:
         BASELINE_STATUS["autokeras"] = f"unavailable: {type(exc).__name__}: {exc}"[:200]
 
@@ -2049,6 +2046,37 @@ if not (AUTOKERAS_OK and H2O_OK):
 ''')
 
 code(r'''
+def patch_keras_integer_units():
+    """AutoKeras derives layer widths from NumPy integers, and Keras validates `units`
+    with a strict isinstance(int) check. The result is a ValueError that reports a
+    perfectly valid-looking value ("expected a positive integer. Received: units=10").
+    Coerce at the layer boundary.
+
+    This touches only the AutoKeras baseline: the proposed framework's neural paths are
+    PyTorch and never construct a Keras layer.
+    """
+    patched_any = []
+    for module_name in ("keras", "tensorflow.keras"):
+        try:
+            module = __import__(module_name, fromlist=["layers"])
+            dense = module.layers.Dense
+        except Exception:
+            continue
+        if getattr(dense, "_omniml_units_patched", False):
+            continue
+        original = dense.__init__
+
+        def make(orig):
+            def __init__(self, units, *args, **kwargs):
+                return orig(self, int(units), *args, **kwargs)
+            return __init__
+
+        dense.__init__ = make(original)
+        dense._omniml_units_patched = True
+        patched_any.append(module_name)
+    return patched_any
+
+
 def run_autokeras_fold(X_train, y_train, X_val, y_val, modality="tabular"):
     """One AutoKeras fold. Returns (metrics | None, status)."""
     if not AUTOKERAS_OK:
@@ -2057,6 +2085,9 @@ def run_autokeras_fold(X_train, y_train, X_val, y_val, modality="tabular"):
         import autokeras as ak
         import tensorflow as tf
         tf.random.set_seed(SEED)
+        patch_keras_integer_units()
+        y_train = np.asarray(y_train).astype("int32")
+        y_val = np.asarray(y_val).astype("int32")
         trials = BUDGET["autokeras_trials"]
         epochs = 10 if FULL_RUN else 3
 
