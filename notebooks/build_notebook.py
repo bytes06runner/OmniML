@@ -2276,9 +2276,32 @@ def _load_imdb_keras(n_train, n_test, errors):
             "keras:imdb (word-index decoded, same Maas et al. corpus)")
 
 
+def ensure_peft_torchao_compat():
+    """PEFT's LoRA dispatcher probes for torchao and raises if it is present but older
+    than PEFT expects. Colab ships an older torchao than current PEFT requires. LoRA on
+    unquantised fp16 weights never uses torchao, so it is removed rather than upgraded:
+    torchao releases are pinned to specific torch builds and upgrading it risks breaking
+    the CUDA stack the image experiment depends on."""
+    import importlib.util
+    if importlib.util.find_spec("torchao") is None:
+        return
+    try:
+        from importlib.metadata import version
+        current = version("torchao")
+    except Exception:
+        current = "unknown"
+    print(f"  removing torchao {current} (incompatible with this PEFT, unused by LoRA)")
+    subprocess.run([sys.executable, "-m", "pip", "uninstall", "-y", "-q", "torchao"],
+                   capture_output=True)
+    for module in [m for m in list(sys.modules) if m.startswith("torchao")]:
+        sys.modules.pop(module, None)
+    importlib.invalidate_caches()
+
+
 if BUDGET["text_use_lora"]:
     pip_install(["transformers>=4.40.0", "peft>=0.11.0", "accelerate>=0.30.0"],
                 "transformers + peft (LoRA fine-tuning)")
+    ensure_peft_torchao_compat()
 
 t0 = time.time()
 print("Experiment 2 — IMDB Sentiment\n")
